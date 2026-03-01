@@ -40,4 +40,11 @@ var (
 
 	// ErrInvalidSeparator is returned when an invalid separator is provided.
 	ErrInvalidSeparator = errors.New("bpid: invalid separator: must be '.' or '~'")
+
+	// ErrInvalidSignature is returned when the HMAC signature on a signed ID
+	// does not match any known key.
+	ErrInvalidSignature = errors.New("bpid: invalid signature")
+
+	// ErrInvalidKey is returned when a signing or verification key is empty.
+	ErrInvalidKey = errors.New("bpid: invalid key: must be non-empty")
 )
