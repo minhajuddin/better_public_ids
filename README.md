@@ -96,6 +96,28 @@ sr := bpid.MustNewSignedRegistry(registry, newKey, bpid.WithOldKeys(oldKey))
 // Once all old IDs have expired, remove oldKey.
 ```
 
+## Production Keys with OpenSSL
+
+Generate 32-byte (256-bit) keys — optimal for HMAC-SHA256:
+
+```sh
+openssl rand -base64 32 | tr '+/' '-_' | tr -d '='
+```
+
+Decode the base64url keys and create a registry with 1 active key + 2 older verification-only keys:
+
+```go
+import "encoding/base64"
+
+currentKey, _ := base64.RawURLEncoding.DecodeString("JGUzV-AC0ztqE97EeYj2Is_n6gr9afFpAELEUGaotCs")
+oldKey1, _    := base64.RawURLEncoding.DecodeString("_YVqS8xrQotQLz5-CKS486oFj_E4koAZX7X_vQlb3LM")
+oldKey2, _    := base64.RawURLEncoding.DecodeString("7k2G4k7JARnOdYajft0gCAmQLKml_A9uiic3ZFmQb5k")
+
+sr := bpid.MustNewSignedRegistry(registry, currentKey, bpid.WithOldKeys(oldKey1, oldKey2))
+// New IDs are signed with currentKey.
+// Old IDs signed with oldKey1 or oldKey2 still verify.
+```
+
 ## Custom Codec
 
 By default, struct data is serialized with `encoding/gob`. You can swap in any codec (JSON, msgpack, protobuf, etc.) by implementing the `Codec` interface and passing it via `WithCodec`:
@@ -299,6 +321,20 @@ Registry: bpid.Registry(separator=".", types=1, registered=[sess→main.SessionI
 
 Msgpack SessionID serialized:   sess.gaRVVUlExBBrp7gQna0R0YC0AMBP1DDI
 Msgpack SessionID deserialized: UUID=6ba7b810-9dad-11d1-80b4-00c04fd430c8
+
+========================================
+  Production Keys with OpenSSL
+========================================
+
+Signed with oldKey2: inv.Lf-FAwEBCEludml0ZUlEAf-GAA...
+Signed with oldKey1: inv.Lf-FAwEBCEludml0ZUlEAf-GAA...
+
+SignedRegistry: bpid.SignedRegistry(signingKey=24653357..., oldKeys=2, registry=bpid.Registry(separator=".", types=3, registered=[inv→main.InviteID, order→main.OrderID, sess→main.SessionID]))
+
+oldKey2 ID valid: Workspace="acme-corp" Code="xK9mQ"
+oldKey1 ID valid: Workspace="acme-corp" Code="xK9mQ"
+Signed with current: inv.Lf-FAwEBCEludml0ZUlEAf-GAA...
+Current key valid:  Workspace="acme-corp" Code="xK9mQ"
 ```
 
 ## Development

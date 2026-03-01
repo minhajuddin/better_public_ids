@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -86,6 +87,8 @@ func main() {
 	jsonCodecExample()
 	fmt.Println()
 	msgpackExample()
+	fmt.Println()
+	opensslKeyRotationExample(r)
 }
 
 func signedExample(r *bpid.Registry) {
@@ -180,6 +183,74 @@ func jsonCodecExample() {
 		log.Fatal(err)
 	}
 	fmt.Printf("JSON OrderID deserialized: ShopID=%d OrderSeq=%d\n", back.ShopID, back.OrderSeq)
+}
+
+func opensslKeyRotationExample(r *bpid.Registry) {
+	fmt.Println("========================================")
+	fmt.Println("  Production Keys with OpenSSL")
+	fmt.Println("========================================")
+	fmt.Println()
+
+	// Generate 32-byte (256-bit) keys with:
+	//   openssl rand -base64 32 | tr '+/' '-_' | tr -d '='
+	const (
+		currentKeyB64 = "JGUzV-AC0ztqE97EeYj2Is_n6gr9afFpAELEUGaotCs"
+		oldKey1B64    = "_YVqS8xrQotQLz5-CKS486oFj_E4koAZX7X_vQlb3LM"
+		oldKey2B64    = "7k2G4k7JARnOdYajft0gCAmQLKml_A9uiic3ZFmQb5k"
+	)
+
+	currentKey, err := base64.RawURLEncoding.DecodeString(currentKeyB64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	oldKey1, err := base64.RawURLEncoding.DecodeString(oldKey1B64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	oldKey2, err := base64.RawURLEncoding.DecodeString(oldKey2B64)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Phase 1: sign with the oldest key (simulates a legacy ID).
+	sr2 := bpid.MustNewSignedRegistry(r, oldKey2)
+	invite := InviteID{Workspace: "acme-corp", Code: "xK9mQ"}
+	signedOld2, _ := bpid.SignedSerialize(sr2, invite)
+	fmt.Println("Signed with oldKey2:", signedOld2[:30]+"...")
+
+	// Phase 2: sign with the previous key.
+	sr1 := bpid.MustNewSignedRegistry(r, oldKey1)
+	signedOld1, _ := bpid.SignedSerialize(sr1, invite)
+	fmt.Println("Signed with oldKey1:", signedOld1[:30]+"...")
+
+	// Phase 3: rotate to currentKey, keeping both old keys for verification.
+	sr := bpid.MustNewSignedRegistry(r, currentKey, bpid.WithOldKeys(oldKey1, oldKey2))
+	fmt.Println()
+	fmt.Println("SignedRegistry:", sr.Inspect())
+	fmt.Println()
+
+	// Both old IDs still verify.
+	inv2, err := bpid.SignedDeserialize[InviteID](sr, signedOld2)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("oldKey2 ID valid: Workspace=%q Code=%q\n", inv2.Workspace, inv2.Code)
+
+	inv1, err := bpid.SignedDeserialize[InviteID](sr, signedOld1)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("oldKey1 ID valid: Workspace=%q Code=%q\n", inv1.Workspace, inv1.Code)
+
+	// New IDs are signed with the current key.
+	signedNew, _ := bpid.SignedSerialize(sr, invite)
+	fmt.Println("Signed with current:", signedNew[:30]+"...")
+
+	invNew, err := bpid.SignedDeserialize[InviteID](sr, signedNew)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Current key valid:  Workspace=%q Code=%q\n", invNew.Workspace, invNew.Code)
 }
 
 func msgpackExample() {
