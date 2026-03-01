@@ -227,12 +227,12 @@ func SignedDeserialize[T any](sr *SignedRegistry, s string) (T, error)
 
 ## Full Example
 
-A runnable example lives in [`example/main.go`](example/main.go). It registers three ID types — int64, UUID, and string-based — then demonstrates serialization, signed IDs, tamper detection, key rotation, and a custom JSON codec.
+A runnable example lives in [`example/main.go`](example/main.go). It registers three ID types — int64, UUID, and string-based — then demonstrates serialization, signed IDs, tamper detection, key rotation, and custom codecs (JSON and msgpack).
 
-Run it with:
+The example has its own `go.mod` so its dependencies (`google/uuid`, `msgpack`) don't leak into the root module. Run it with:
 
 ```sh
-go run ./example/
+cd example && go run .
 ```
 
 Output:
@@ -243,7 +243,7 @@ Registry: bpid.Registry(separator=".", types=3, registered=[inv→main.InviteID,
 OrderID serialized:   order.LH8DAQEHT3JkZXJJRAH_gAABAgEGU2hvcElEAQQAAQhPcmRlclNlcQEEAAAACf-AAVQB_gfSAA
 OrderID deserialized: ShopID=42 OrderSeq=1001
 
-SessionID serialized:   sess.If-BAwEBCVNlc3Npb25JRAH_ggABAQEEVVVJRAH_hAAAABn_gwEBAQlbMTZddWludDgB_4QAAQYBIAAAH_-CARBr_6f_uBD_nf-tEf_R_4D_tAD_wE__1DD_yAA
+SessionID serialized:   sess.If-BAwEBCVNlc3Npb25JRAH_ggABAQEEVVVJRAH_hAAAABD_gwYBAQRVVUlEAf-EAAAAFf-CARBrp7gQna0R0YC0AMBP1DDIAA
 SessionID deserialized: UUID=6ba7b810-9dad-11d1-80b4-00c04fd430c8
 
 InviteID serialized:   inv.Lf-FAwEBCEludml0ZUlEAf-GAAECAQlXb3Jrc3BhY2UBDAABBENvZGUBDAAAABX_hgEJYWNtZS1jb3JwAQV4SzltUQA
@@ -280,6 +280,15 @@ Registry: bpid.Registry(separator=".", types=1, registered=[order→main.OrderID
 
 JSON OrderID serialized:   order.eyJTaG9wSUQiOjQyLCJPcmRlclNlcSI6MTAwMX0
 JSON OrderID deserialized: ShopID=42 OrderSeq=1001
+
+========================================
+  Custom Codec (msgpack)
+========================================
+
+Registry: bpid.Registry(separator=".", types=1, registered=[sess→main.SessionID])
+
+Msgpack SessionID serialized:   sess.gaRVVUlExBBrp7gQna0R0YC0AMBP1DDI
+Msgpack SessionID deserialized: UUID=6ba7b810-9dad-11d1-80b4-00c04fd430c8
 ```
 
 ## Development

@@ -1,13 +1,13 @@
 package main
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
-	"strings"
 
+	"github.com/google/uuid"
 	bpid "github.com/minhajuddin/better_public_ids"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 // --- ID types ---
@@ -18,9 +18,9 @@ type OrderID struct {
 	OrderSeq int64
 }
 
-// SessionID uses a UUID (stored as [16]byte) to identify a browser session.
+// SessionID uses a UUID to identify a browser session.
 type SessionID struct {
-	UUID [16]byte
+	UUID uuid.UUID
 }
 
 // InviteID uses string fields, useful for human-readable or external identifiers.
@@ -52,7 +52,7 @@ func main() {
 	fmt.Printf("OrderID deserialized: ShopID=%d OrderSeq=%d\n\n", orderBack.ShopID, orderBack.OrderSeq)
 
 	// --- UUID-based ID ---
-	session := SessionID{UUID: mustParseUUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")}
+	session := SessionID{UUID: uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8")}
 	sessStr := bpid.MustSerialize(r, session)
 	fmt.Println("SessionID serialized:  ", sessStr)
 
@@ -60,7 +60,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("SessionID deserialized: UUID=%s\n\n", formatUUID(sessBack.UUID))
+	fmt.Printf("SessionID deserialized: UUID=%s\n\n", sessBack.UUID)
 
 	// --- String-based ID ---
 	invite := InviteID{Workspace: "acme-corp", Code: "xK9mQ"}
@@ -84,6 +84,8 @@ func main() {
 	signedExample(r)
 	fmt.Println()
 	jsonCodecExample()
+	fmt.Println()
+	msgpackExample()
 }
 
 func signedExample(r *bpid.Registry) {
@@ -180,18 +182,33 @@ func jsonCodecExample() {
 	fmt.Printf("JSON OrderID deserialized: ShopID=%d OrderSeq=%d\n", back.ShopID, back.OrderSeq)
 }
 
-// mustParseUUID parses a standard UUID string into [16]byte.
-func mustParseUUID(s string) [16]byte {
-	s = strings.ReplaceAll(s, "-", "")
-	b, err := hex.DecodeString(s)
-	if err != nil || len(b) != 16 {
-		panic("invalid UUID: " + s)
-	}
-	return [16]byte(b)
-}
+// MsgpackCodec implements bpid.Codec using msgpack.
+type MsgpackCodec struct{}
 
-// formatUUID formats [16]byte as a standard UUID string.
-func formatUUID(b [16]byte) string {
-	h := hex.EncodeToString(b[:])
-	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
+func (MsgpackCodec) Marshal(v any) ([]byte, error)     { return msgpack.Marshal(v) }
+func (MsgpackCodec) Unmarshal(data []byte, v any) error { return msgpack.Unmarshal(data, v) }
+
+func msgpackExample() {
+	fmt.Println("========================================")
+	fmt.Println("  Custom Codec (msgpack)")
+	fmt.Println("========================================")
+	fmt.Println()
+
+	r := bpid.MustNewRegistry(
+		bpid.WithCodec(MsgpackCodec{}),
+		bpid.WithType[SessionID]("sess"),
+	)
+
+	fmt.Println("Registry:", r.Inspect())
+	fmt.Println()
+
+	session := SessionID{UUID: uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8")}
+	s := bpid.MustSerialize(r, session)
+	fmt.Println("Msgpack SessionID serialized:  ", s)
+
+	back, err := bpid.Deserialize[SessionID](r, s)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Msgpack SessionID deserialized: UUID=%s\n", back.UUID)
 }
