@@ -1,6 +1,7 @@
 package bpid
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -527,4 +528,80 @@ func TestConcurrentMixedOperations(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+// --- Custom Codec Tests ---
+
+// jsonCodec implements Codec using encoding/json.
+type jsonCodec struct{}
+
+func (jsonCodec) Marshal(v any) ([]byte, error)          { return json.Marshal(v) }
+func (jsonCodec) Unmarshal(data []byte, v any) error      { return json.Unmarshal(data, v) }
+
+func TestWithCodecJSON(t *testing.T) {
+	r, err := NewRegistry(
+		WithCodec(jsonCodec{}),
+		WithType[testUserID]("user"),
+	)
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+
+	data := testUserID{OrgID: 42, UserSeq: 1001}
+	s, err := Serialize(r, data)
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	if !strings.HasPrefix(s, "user.") {
+		t.Errorf("Serialize() = %q, want prefix 'user.'", s)
+	}
+
+	got, err := Deserialize[testUserID](r, s)
+	if err != nil {
+		t.Fatalf("Deserialize: %v", err)
+	}
+	if got != data {
+		t.Errorf("round-trip with JSON codec: got %+v, want %+v", got, data)
+	}
+}
+
+func TestWithCodecDefaultIsGob(t *testing.T) {
+	r := MustNewRegistry(WithType[testUserID]("user"))
+	if _, ok := r.Codec().(GobCodec); !ok {
+		t.Errorf("default codec = %T, want GobCodec", r.Codec())
+	}
+}
+
+func TestWithCodecAccessor(t *testing.T) {
+	c := jsonCodec{}
+	r, err := NewRegistry(WithCodec(c), WithType[testUserID]("user"))
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	if r.Codec() != c {
+		t.Errorf("Codec() returned different instance")
+	}
+}
+
+func TestWithCodecNilErrors(t *testing.T) {
+	_, err := NewRegistry(WithCodec(nil))
+	if err == nil {
+		t.Fatal("WithCodec(nil) should error")
+	}
+}
+
+func TestWithCodecIncompatibleRoundTrip(t *testing.T) {
+	// Serialize with JSON, try to deserialize with gob — should fail.
+	rJSON, _ := NewRegistry(WithCodec(jsonCodec{}), WithType[testUserID]("user"))
+	rGob := MustNewRegistry(WithType[testUserID]("user"))
+
+	s, err := Serialize(rJSON, testUserID{OrgID: 1, UserSeq: 2})
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+
+	_, err = Deserialize[testUserID](rGob, s)
+	if err == nil {
+		t.Fatal("Deserialize with mismatched codec should fail")
+	}
 }

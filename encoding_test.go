@@ -92,6 +92,52 @@ func TestDecodeGobInvalid(t *testing.T) {
 	}
 }
 
+// --- GobCodec Tests ---
+
+func TestGobCodecRoundTrip(t *testing.T) {
+	c := GobCodec{}
+	tests := []struct {
+		name string
+		data testEncID
+	}{
+		{name: "zero value", data: testEncID{}},
+		{name: "positive values", data: testEncID{OrgID: 42, UserSeq: 1001}},
+		{name: "negative values", data: testEncID{OrgID: -1, UserSeq: -999}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := c.Marshal(tt.data)
+			if err != nil {
+				t.Fatalf("Marshal: %v", err)
+			}
+			if len(raw) == 0 {
+				t.Fatal("Marshal returned empty bytes")
+			}
+
+			var got testEncID
+			if err := c.Unmarshal(raw, &got); err != nil {
+				t.Fatalf("Unmarshal: %v", err)
+			}
+			if got != tt.data {
+				t.Errorf("round-trip: got %+v, want %+v", got, tt.data)
+			}
+		})
+	}
+}
+
+func TestGobCodecUnmarshalInvalid(t *testing.T) {
+	c := GobCodec{}
+	var out testEncID
+	err := c.Unmarshal([]byte{0xFF, 0xFE, 0xFD}, &out)
+	if err == nil {
+		t.Fatal("expected error for invalid gob bytes")
+	}
+	if !errors.Is(err, ErrDecodingFailed) {
+		t.Errorf("error = %v, want ErrDecodingFailed", err)
+	}
+}
+
 func TestEncodeBytes(t *testing.T) {
 	tests := []struct {
 		name  string

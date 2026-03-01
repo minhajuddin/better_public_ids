@@ -24,8 +24,9 @@ func validatePrefix(prefix string) error {
 
 // registryConfig accumulates options before building an immutable [Registry].
 type registryConfig struct {
-	separator   string
-	prefixes    map[string]struct{}
+	separator    string
+	codec        Codec
+	prefixes     map[string]struct{}
 	typeToPrefix map[reflect.Type]string
 }
 
@@ -40,6 +41,18 @@ func WithSeparator(sep string) RegistryOption {
 			return fmt.Errorf("%w: got %q", ErrInvalidSeparator, sep)
 		}
 		cfg.separator = sep
+		return nil
+	}
+}
+
+// WithCodec sets the [Codec] used to marshal and unmarshal values.
+// When not set, [GobCodec] is used.
+func WithCodec(c Codec) RegistryOption {
+	return func(cfg *registryConfig) error {
+		if c == nil {
+			return fmt.Errorf("bpid: codec must not be nil")
+		}
+		cfg.codec = c
 		return nil
 	}
 }
@@ -66,6 +79,7 @@ func WithType[T any](prefix string) RegistryOption {
 // Registry is the central type. Immutable after creation, safe for concurrent use.
 type Registry struct {
 	separator    string
+	codec        Codec
 	prefixes     map[string]struct{}
 	typeToPrefix map[reflect.Type]string
 }
@@ -82,8 +96,13 @@ func NewRegistry(opts ...RegistryOption) (*Registry, error) {
 			return nil, err
 		}
 	}
+	codec := cfg.codec
+	if codec == nil {
+		codec = GobCodec{}
+	}
 	return &Registry{
 		separator:    cfg.separator,
+		codec:        codec,
 		prefixes:     cfg.prefixes,
 		typeToPrefix: cfg.typeToPrefix,
 	}, nil
@@ -101,6 +120,11 @@ func MustNewRegistry(opts ...RegistryOption) *Registry {
 // Separator returns the registry's separator string.
 func (r *Registry) Separator() string {
 	return r.separator
+}
+
+// Codec returns the registry's [Codec].
+func (r *Registry) Codec() Codec {
+	return r.codec
 }
 
 // Inspect returns a human-readable summary of the registry for debugging and
@@ -163,7 +187,7 @@ func Serialize[T any](r *Registry, data T) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("%w: %v", ErrUnregisteredPrefix, reflect.TypeFor[T]())
 	}
-	raw, err := encodeGob(data)
+	raw, err := r.codec.Marshal(data)
 	if err != nil {
 		return "", err
 	}
@@ -206,5 +230,9 @@ func Deserialize[T any](r *Registry, s string) (T, error) {
 	if len(raw) == 0 {
 		return zero, fmt.Errorf("%w: empty encoded data", ErrInvalidFormat)
 	}
-	return decodeGob[T](raw)
+	var result T
+	if err := r.codec.Unmarshal(raw, &result); err != nil {
+		return zero, err
+	}
+	return result, nil
 }

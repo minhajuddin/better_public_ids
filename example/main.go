@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -81,6 +82,8 @@ func main() {
 
 	fmt.Println()
 	signedExample(r)
+	fmt.Println()
+	jsonCodecExample()
 }
 
 func signedExample(r *bpid.Registry) {
@@ -144,6 +147,37 @@ func signedExample(r *bpid.Registry) {
 		log.Fatal(err)
 	}
 	fmt.Printf("New ID valid:        Workspace=%q Code=%q\n", invBack2.Workspace, invBack2.Code)
+}
+
+// JSONCodec implements bpid.Codec using encoding/json.
+type JSONCodec struct{}
+
+func (JSONCodec) Marshal(v any) ([]byte, error)     { return json.Marshal(v) }
+func (JSONCodec) Unmarshal(data []byte, v any) error { return json.Unmarshal(data, v) }
+
+func jsonCodecExample() {
+	fmt.Println("========================================")
+	fmt.Println("  Custom Codec (JSON)")
+	fmt.Println("========================================")
+	fmt.Println()
+
+	r := bpid.MustNewRegistry(
+		bpid.WithCodec(JSONCodec{}),
+		bpid.WithType[OrderID]("order"),
+	)
+
+	fmt.Println("Registry:", r.Inspect())
+	fmt.Println()
+
+	order := OrderID{ShopID: 42, OrderSeq: 1001}
+	s := bpid.MustSerialize(r, order)
+	fmt.Println("JSON OrderID serialized:  ", s)
+
+	back, err := bpid.Deserialize[OrderID](r, s)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("JSON OrderID deserialized: ShopID=%d OrderSeq=%d\n", back.ShopID, back.OrderSeq)
 }
 
 // mustParseUUID parses a standard UUID string into [16]byte.

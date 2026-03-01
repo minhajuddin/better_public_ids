@@ -1,6 +1,6 @@
 # bpid — Better Public IDs
 
-Type-safe, prefixed public identifiers for Go using generics. Each ID carries structured data serialized with `encoding/gob` and encoded as base64url. Zero external dependencies.
+Type-safe, prefixed public identifiers for Go using generics. Each ID carries structured data serialized with a pluggable codec (`encoding/gob` by default) and encoded as base64url. Zero external dependencies.
 
 ```
 user.Kv-HAwEBBlVzZXJJRAH_iAABAgEFT3JnSUQBBAABB1VzZXJTZXEBBAAAAAn_iAFUAf4H0gA
@@ -96,6 +96,34 @@ sr := bpid.MustNewSignedRegistry(registry, newKey, bpid.WithOldKeys(oldKey))
 // Once all old IDs have expired, remove oldKey.
 ```
 
+## Custom Codec
+
+By default, struct data is serialized with `encoding/gob`. You can swap in any codec (JSON, msgpack, protobuf, etc.) by implementing the `Codec` interface and passing it via `WithCodec`:
+
+```go
+// Codec marshals and unmarshals values to and from bytes.
+type Codec interface {
+    Marshal(v any) ([]byte, error)
+    Unmarshal(data []byte, v any) error
+}
+```
+
+Example with `encoding/json`:
+
+```go
+type JSONCodec struct{}
+
+func (JSONCodec) Marshal(v any) ([]byte, error)     { return json.Marshal(v) }
+func (JSONCodec) Unmarshal(data []byte, v any) error { return json.Unmarshal(data, v) }
+
+reg := bpid.MustNewRegistry(
+    bpid.WithCodec(JSONCodec{}),
+    bpid.WithType[UserID]("user"),
+)
+```
+
+The base64url encoding layer is unchanged — only the struct-to-bytes step is swapped. `GobCodec` is the built-in default and is exported so you can compose with it.
+
 ## Custom Separators
 
 The default separator is `"."`. You can use `"~"` instead (only `"."` and `"~"` are allowed):
@@ -111,16 +139,16 @@ reg := bpid.MustNewRegistry(
 ## Encoding Pipeline
 
 ```
-Struct → gob → base64url (no padding) → "prefix.encoded"
+Struct → codec (gob by default) → base64url (no padding) → "prefix.encoded"
 ```
 
 Signed variant:
 
 ```
-Struct → gob → base64url → "prefix.encoded" → HMAC-SHA256 → "prefix.encoded.signature"
+Struct → codec → base64url → "prefix.encoded" → HMAC-SHA256 → "prefix.encoded.signature"
 ```
 
-The encoded data uses Go's `encoding/gob` format, so only Go programs can decode the embedded data. Non-Go consumers can still use IDs as opaque strings — compare, store, and transmit them freely.
+With the default gob codec, only Go programs can decode the embedded data. With a JSON or protobuf codec, any language can decode them. Non-Go consumers can always use IDs as opaque strings — compare, store, and transmit them freely.
 
 ## Error Handling
 
@@ -164,9 +192,11 @@ func MustNewRegistry(opts ...RegistryOption) *Registry
 
 func WithType[T any](prefix string) RegistryOption
 func WithSeparator(sep string) RegistryOption
+func WithCodec(c Codec) RegistryOption
 
 func (*Registry) Prefix(s string) (string, error)
 func (*Registry) Separator() string
+func (*Registry) Codec() Codec
 func (*Registry) Inspect() string
 ```
 
@@ -197,7 +227,7 @@ func SignedDeserialize[T any](sr *SignedRegistry, s string) (T, error)
 
 ## Full Example
 
-A runnable example lives in [`example/main.go`](example/main.go). It registers three ID types — int64, UUID, and string-based — then demonstrates serialization, signed IDs, tamper detection, and key rotation.
+A runnable example lives in [`example/main.go`](example/main.go). It registers three ID types — int64, UUID, and string-based — then demonstrates serialization, signed IDs, tamper detection, key rotation, and a custom JSON codec.
 
 Run it with:
 
@@ -241,6 +271,15 @@ Signed with old key: inv.Lf-FAwEBCEludml0ZUlEAf-GAA...
 Old ID still valid:  Workspace="acme-corp" Code="xK9mQ"
 Signed with new key: inv.Lf-FAwEBCEludml0ZUlEAf-GAA...
 New ID valid:        Workspace="acme-corp" Code="xK9mQ"
+
+========================================
+  Custom Codec (JSON)
+========================================
+
+Registry: bpid.Registry(separator=".", types=1, registered=[order→main.OrderID])
+
+JSON OrderID serialized:   order.eyJTaG9wSUQiOjQyLCJPcmRlclNlcSI6MTAwMX0
+JSON OrderID deserialized: ShopID=42 OrderSeq=1001
 ```
 
 ## Development
