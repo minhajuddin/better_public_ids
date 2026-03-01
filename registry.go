@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -100,6 +101,41 @@ func MustNewRegistry(opts ...RegistryOption) *Registry {
 // Separator returns the registry's separator string.
 func (r *Registry) Separator() string {
 	return r.separator
+}
+
+// Inspect returns a human-readable summary of the registry for debugging and
+// logging. It lists the separator, number of registered types, and each
+// type-to-prefix mapping.
+func (r *Registry) Inspect() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "bpid.Registry(separator=%q, types=%d", r.separator, len(r.typeToPrefix))
+
+	if len(r.typeToPrefix) > 0 {
+		// Collect and sort entries for deterministic output.
+		type entry struct {
+			prefix   string
+			typeName string
+		}
+		entries := make([]entry, 0, len(r.typeToPrefix))
+		for t, prefix := range r.typeToPrefix {
+			entries = append(entries, entry{prefix: prefix, typeName: t.String()})
+		}
+		sort.Slice(entries, func(i, j int) bool {
+			return entries[i].prefix < entries[j].prefix
+		})
+
+		b.WriteString(", registered=[")
+		for i, e := range entries {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			fmt.Fprintf(&b, "%s→%s", e.prefix, e.typeName)
+		}
+		b.WriteString("]")
+	}
+
+	b.WriteString(")")
+	return b.String()
 }
 
 // Prefix extracts the prefix from a serialized ID string.

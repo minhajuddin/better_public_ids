@@ -392,6 +392,40 @@ func TestWithOldKeysEmptyKeyError(t *testing.T) {
 	}
 }
 
+// --- Inspect Tests ---
+
+func TestSignedRegistryInspect(t *testing.T) {
+	sr, _ := newTestSignedRegistry(t)
+	got := sr.Inspect()
+
+	if !strings.Contains(got, "bpid.SignedRegistry(") {
+		t.Errorf("Inspect() = %q, want bpid.SignedRegistry( prefix", got)
+	}
+	if !strings.Contains(got, "signingKey=") {
+		t.Errorf("Inspect() = %q, want signingKey= entry", got)
+	}
+	if !strings.Contains(got, "oldKeys=0") {
+		t.Errorf("Inspect() = %q, want oldKeys=0", got)
+	}
+	// Should contain the nested registry info.
+	if !strings.Contains(got, "bpid.Registry(") {
+		t.Errorf("Inspect() = %q, want nested Registry info", got)
+	}
+	// Key preview should not contain the full key.
+	if strings.Contains(got, string(testSigningKey)) {
+		t.Errorf("Inspect() = %q, should not expose full signing key", got)
+	}
+}
+
+func TestSignedRegistryInspectWithOldKeys(t *testing.T) {
+	sr, _ := newTestSignedRegistry(t, WithOldKeys([]byte("old-key-1"), []byte("old-key-2")))
+	got := sr.Inspect()
+
+	if !strings.Contains(got, "oldKeys=2") {
+		t.Errorf("Inspect() = %q, want oldKeys=2", got)
+	}
+}
+
 // --- Benchmarks ---
 
 var benchSignedRegistry = MustNewSignedRegistry(

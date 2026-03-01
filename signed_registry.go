@@ -3,6 +3,7 @@ package bpid
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 )
@@ -83,6 +84,20 @@ func MustNewSignedRegistry(r *Registry, signingKey []byte, opts ...SignedRegistr
 // Separator returns the underlying registry's separator string.
 func (sr *SignedRegistry) Separator() string {
 	return sr.registry.Separator()
+}
+
+// Inspect returns a human-readable summary of the signed registry for
+// debugging and logging. It includes the underlying registry info and the
+// first few bytes of each key in hex (enough to identify keys without
+// exposing full secret material).
+func (sr *SignedRegistry) Inspect() string {
+	return fmt.Sprintf("bpid.SignedRegistry(signingKey=%s, oldKeys=%d, registry=%s)",
+		keyPreview(sr.signingKey), len(sr.oldKeys), sr.registry.Inspect())
+}
+
+// keyPreview returns a short hex preview of a key for debugging.
+func keyPreview(key []byte) string {
+	return hex.EncodeToString(key[:min(4, len(key))]) + "..."
 }
 
 // Prefix verifies the signature on s, then extracts and returns the prefix.

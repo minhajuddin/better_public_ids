@@ -396,6 +396,52 @@ func TestDeserializeWrongSeparator(t *testing.T) {
 
 // --- Concurrency Tests ---
 
+// --- Inspect Tests ---
+
+func TestInspectEmptyRegistry(t *testing.T) {
+	r := MustNewRegistry()
+	got := r.Inspect()
+	want := `bpid.Registry(separator=".", types=0)`
+	if got != want {
+		t.Errorf("Inspect() = %q, want %q", got, want)
+	}
+}
+
+func TestInspectWithTypes(t *testing.T) {
+	r := MustNewRegistry(
+		WithType[testUserID]("user"),
+		WithType[testPostID]("post"),
+	)
+	got := r.Inspect()
+
+	// Should contain key info.
+	if !strings.Contains(got, "types=2") {
+		t.Errorf("Inspect() = %q, want types=2", got)
+	}
+	if !strings.Contains(got, "user→") {
+		t.Errorf("Inspect() = %q, want user→ entry", got)
+	}
+	if !strings.Contains(got, "post→") {
+		t.Errorf("Inspect() = %q, want post→ entry", got)
+	}
+	// Entries should be sorted by prefix: post before user.
+	postIdx := strings.Index(got, "post→")
+	userIdx := strings.Index(got, "user→")
+	if postIdx > userIdx {
+		t.Errorf("Inspect() entries not sorted: post at %d, user at %d", postIdx, userIdx)
+	}
+}
+
+func TestInspectCustomSeparator(t *testing.T) {
+	r := MustNewRegistry(WithSeparator("~"))
+	got := r.Inspect()
+	if !strings.Contains(got, `separator="~"`) {
+		t.Errorf("Inspect() = %q, want separator=\"~\"", got)
+	}
+}
+
+// --- Concurrency Tests ---
+
 func TestConcurrentSerialize(t *testing.T) {
 	r := MustNewRegistry(WithType[testUserID]("user"))
 	const n = 100
