@@ -25,16 +25,16 @@ func ExampleSerialize() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(s[:5]) // print just the prefix + separator
+	fmt.Println(s)
 	// Output:
-	// user.
+	// user.Kv-HAwEBBlVzZXJJRAH_iAABAgEFT3JnSUQBBAABB1VzZXJTZXEBBAAAAAn_iAFUAf4H0gA
 }
 
 func ExampleMustSerialize() {
 	s := bpid.MustSerialize(exampleRegistry, UserID{OrgID: 42, UserSeq: 1001})
-	fmt.Println(s[:5])
+	fmt.Println(s)
 	// Output:
-	// user.
+	// user.Kv-HAwEBBlVzZXJJRAH_iAABAgEFT3JnSUQBBAABB1VzZXJTZXEBBAAAAAn_iAFUAf4H0gA
 }
 
 func ExampleDeserialize() {

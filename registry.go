@@ -119,6 +119,9 @@ func (r *Registry) Prefix(s string) (string, error) {
 }
 
 // Serialize encodes a value into a prefixed string.
+//
+//	s, err := Serialize(r, UserID{OrgID: 42, UserSeq: 1001})
+//	// s = "user.Kv-HAwEBBlVzZXJJRAH_iAABAgEFT3JnSUQBBAABB1VzZXJTZXEBBAAAAAn_iAFUAf4H0gA"
 func Serialize[T any](r *Registry, data T) (string, error) {
 	prefix, ok := r.typeToPrefix[reflect.TypeFor[T]()]
 	if !ok {
@@ -132,6 +135,9 @@ func Serialize[T any](r *Registry, data T) (string, error) {
 }
 
 // MustSerialize is like [Serialize] but panics on error.
+//
+//	s := MustSerialize(r, UserID{OrgID: 42, UserSeq: 1001})
+//	// s = "user.Kv-HAwEBBlVzZXJJRAH_iAABAgEFT3JnSUQBBAABB1VzZXJTZXEBBAAAAAn_iAFUAf4H0gA"
 func MustSerialize[T any](r *Registry, data T) string {
 	s, err := Serialize(r, data)
 	if err != nil {

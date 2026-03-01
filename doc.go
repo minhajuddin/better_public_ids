@@ -20,7 +20,7 @@
 // Serialize a struct into a prefixed string:
 //
 //	s, err := bpid.Serialize(registry, UserID{OrgID: 42, UserSeq: 1001})
-//	// s = "user.<base64url(gob(data))>"
+//	// s = "user.Kv-HAwEBBlVzZXJJRAH_iAABAgEFT3JnSUQBBAABB1VzZXJTZXEBBAAAAAn_iAFUAf4H0gA"
 //
 // Deserialize a prefixed string back into a struct:
 //
