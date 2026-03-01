@@ -1,8 +1,6 @@
 package bpid
 
-import (
-	"testing"
-)
+import "testing"
 
 type fuzzUserID struct {
 	A int64
@@ -11,9 +9,11 @@ type fuzzUserID struct {
 
 func (fuzzUserID) Prefix() string { return "fuzzuser" }
 
-func FuzzParse(f *testing.F) {
-	id := MustNew(fuzzUserID{A: 1, B: "hello"})
-	f.Add(id.String())
+var fuzzRegistry = MustNewRegistry(WithType[fuzzUserID]())
+
+func FuzzDeserialize(f *testing.F) {
+	s := MustSerialize(fuzzRegistry, fuzzUserID{A: 1, B: "hello"})
+	f.Add(s)
 	f.Add("")
 	f.Add("fuzzuser.")
 	f.Add(".")
@@ -24,21 +24,21 @@ func FuzzParse(f *testing.F) {
 	f.Add("\x00\x01\x02")
 
 	f.Fuzz(func(t *testing.T, s string) {
-		id, err := Parse[fuzzUserID](s)
+		data, err := Deserialize[fuzzUserID](fuzzRegistry, s)
 		if err != nil {
 			return
 		}
-		// If parsing succeeded and ID is not zero, verify round-trip.
-		if id.IsZero() {
-			return
-		}
-		str := id.String()
-		id2, err := Parse[fuzzUserID](str)
+		// If deserialization succeeded, verify round-trip.
+		str, err := Serialize(fuzzRegistry, data)
 		if err != nil {
-			t.Fatalf("round-trip failed: Parse(%q) succeeded, but Parse(%q) failed: %v", s, str, err)
+			t.Fatalf("round-trip failed: Deserialize(%q) succeeded, but Serialize failed: %v", s, err)
 		}
-		if !id.Equal(id2) {
-			t.Fatalf("round-trip mismatch: %v != %v", id, id2)
+		data2, err := Deserialize[fuzzUserID](fuzzRegistry, str)
+		if err != nil {
+			t.Fatalf("round-trip failed: Serialize produced %q, but Deserialize failed: %v", str, err)
+		}
+		if data != data2 {
+			t.Fatalf("round-trip mismatch: %+v != %+v", data, data2)
 		}
 	})
 }

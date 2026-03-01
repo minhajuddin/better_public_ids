@@ -3,22 +3,27 @@ package bpid
 import (
 	"fmt"
 	"strings"
-	"sync"
 )
 
 const defaultSeparator = "."
 
+// registryConfig accumulates options before building an immutable [Registry].
+type registryConfig struct {
+	separator string
+	prefixes  map[string]struct{}
+}
+
 // RegistryOption configures a [Registry].
-type RegistryOption func(*Registry) error
+type RegistryOption func(*registryConfig) error
 
 // WithSeparator sets the separator character used between the prefix and the
 // encoded data. Only "." and "~" are allowed.
 func WithSeparator(sep string) RegistryOption {
-	return func(r *Registry) error {
+	return func(cfg *registryConfig) error {
 		if sep != "." && sep != "~" {
 			return fmt.Errorf("%w: got %q", ErrInvalidSeparator, sep)
 		}
-		r.separator = sep
+		cfg.separator = sep
 		return nil
 	}
 }
@@ -27,30 +32,39 @@ func WithSeparator(sep string) RegistryOption {
 func WithType[T PublicID]() RegistryOption {
 	var zero T
 	prefix := zero.Prefix()
-	return func(r *Registry) error {
-		return r.Register(prefix)
+	return func(cfg *registryConfig) error {
+		if err := validatePrefix(prefix); err != nil {
+			return err
+		}
+		if _, exists := cfg.prefixes[prefix]; exists {
+			return fmt.Errorf("%w: %q", ErrDuplicatePrefix, prefix)
+		}
+		cfg.prefixes[prefix] = struct{}{}
+		return nil
 	}
 }
 
-// Registry holds a mapping of prefixes for type-agnostic parsing via [Registry.ParseAny].
+// Registry is the central type. Immutable after creation, safe for concurrent use.
 type Registry struct {
-	mu        sync.RWMutex
 	separator string
 	prefixes  map[string]struct{}
 }
 
 // NewRegistry creates a new [Registry] with the given options.
 func NewRegistry(opts ...RegistryOption) (*Registry, error) {
-	r := &Registry{
+	cfg := &registryConfig{
 		separator: defaultSeparator,
 		prefixes:  make(map[string]struct{}),
 	}
 	for _, opt := range opts {
-		if err := opt(r); err != nil {
+		if err := opt(cfg); err != nil {
 			return nil, err
 		}
 	}
-	return r, nil
+	return &Registry{
+		separator: cfg.separator,
+		prefixes:  cfg.prefixes,
+	}, nil
 }
 
 // MustNewRegistry is like [NewRegistry] but panics on error.
@@ -62,92 +76,73 @@ func MustNewRegistry(opts ...RegistryOption) *Registry {
 	return r
 }
 
-// Register adds a prefix to the registry.
-func (r *Registry) Register(prefix string) error {
-	if err := validatePrefix(prefix); err != nil {
-		return err
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if _, exists := r.prefixes[prefix]; exists {
-		return fmt.Errorf("%w: %q", ErrDuplicatePrefix, prefix)
-	}
-	r.prefixes[prefix] = struct{}{}
-	return nil
-}
-
-// IsRegistered reports whether a prefix has been registered.
-func (r *Registry) IsRegistered(prefix string) bool {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	_, ok := r.prefixes[prefix]
-	return ok
-}
-
-// ParseAny parses a prefixed ID string without knowing its type. It returns
-// the prefix and the raw gob-encoded bytes. The prefix must be registered.
-func (r *Registry) ParseAny(s string) (prefix string, rawBytes []byte, err error) {
-	if s == "" {
-		return "", nil, ErrEmptyString
-	}
-
-	r.mu.RLock()
-	sep := r.separator
-	r.mu.RUnlock()
-
-	prefix, encoded, ok := strings.Cut(s, sep)
-	if !ok {
-		return "", nil, fmt.Errorf("%w: no separator %q found", ErrInvalidFormat, sep)
-	}
-
-	r.mu.RLock()
-	_, ok = r.prefixes[prefix]
-	r.mu.RUnlock()
-
-	if !ok {
-		return "", nil, fmt.Errorf("%w: %q", ErrUnknownPrefix, prefix)
-	}
-
-	rawBytes, err = decodeBytes(encoded)
-	if err != nil {
-		return "", nil, err
-	}
-
-	return prefix, rawBytes, nil
-}
-
 // Separator returns the registry's separator string.
 func (r *Registry) Separator() string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
 	return r.separator
 }
 
-// defaultRegistry is the global registry used by [ParseAny] and [RegisterType].
-// It is not directly replaceable; use [RegisterType] to add prefixes.
-var defaultRegistry = MustNewRegistry()
-
-// DefaultRegistry returns the global registry. Use [RegisterType] to register
-// prefixes rather than calling Register on the returned registry directly.
-func DefaultRegistry() *Registry {
-	return defaultRegistry
+// Prefix extracts the prefix from a serialized ID string.
+// Returns [ErrUnregisteredPrefix] if the prefix is not in this registry.
+func (r *Registry) Prefix(s string) (string, error) {
+	if s == "" {
+		return "", ErrEmptyString
+	}
+	prefix, _, ok := strings.Cut(s, r.separator)
+	if !ok {
+		return "", fmt.Errorf("%w: no separator %q found", ErrInvalidFormat, r.separator)
+	}
+	if _, ok := r.prefixes[prefix]; !ok {
+		return "", fmt.Errorf("%w: %q", ErrUnregisteredPrefix, prefix)
+	}
+	return prefix, nil
 }
 
-// RegisterType registers a [PublicID] type's prefix in the global registry.
-// This must be called (typically in init or main) before using [ParseAny].
-// It is idempotent: registering an already-registered prefix is a no-op.
-func RegisterType[T PublicID]() {
+// Serialize encodes a [PublicID] value into a prefixed string.
+func Serialize[T PublicID](r *Registry, data T) (string, error) {
 	var zero T
 	prefix := zero.Prefix()
-	if defaultRegistry.IsRegistered(prefix) {
-		return
+	if _, ok := r.prefixes[prefix]; !ok {
+		return "", fmt.Errorf("%w: %q", ErrUnregisteredPrefix, prefix)
 	}
-	if err := defaultRegistry.Register(prefix); err != nil {
-		panic(fmt.Sprintf("bpid.RegisterType: %v", err))
+	raw, err := encodeGob(data)
+	if err != nil {
+		return "", err
 	}
+	return prefix + r.separator + encodeBytes(raw), nil
 }
 
-// ParseAny parses a prefixed ID string using the global registry.
-func ParseAny(s string) (prefix string, rawBytes []byte, err error) {
-	return defaultRegistry.ParseAny(s)
+// MustSerialize is like [Serialize] but panics on error.
+func MustSerialize[T PublicID](r *Registry, data T) string {
+	s, err := Serialize(r, data)
+	if err != nil {
+		panic(fmt.Sprintf("bpid.MustSerialize: %v", err))
+	}
+	return s
+}
+
+// Deserialize decodes a prefixed string back into a [PublicID] value.
+func Deserialize[T PublicID](r *Registry, s string) (T, error) {
+	var zero T
+	prefix := zero.Prefix()
+	if _, ok := r.prefixes[prefix]; !ok {
+		return zero, fmt.Errorf("%w: %q", ErrUnregisteredPrefix, prefix)
+	}
+	if s == "" {
+		return zero, ErrEmptyString
+	}
+	gotPrefix, encoded, ok := strings.Cut(s, r.separator)
+	if !ok {
+		return zero, fmt.Errorf("%w: no separator %q found", ErrInvalidFormat, r.separator)
+	}
+	if gotPrefix != prefix {
+		return zero, fmt.Errorf("%w: expected %q, got %q", ErrPrefixMismatch, prefix, gotPrefix)
+	}
+	raw, err := decodeBytes(encoded)
+	if err != nil {
+		return zero, err
+	}
+	if len(raw) == 0 {
+		return zero, fmt.Errorf("%w: empty encoded data", ErrInvalidFormat)
+	}
+	return decodeGob[T](raw)
 }

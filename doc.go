@@ -12,24 +12,29 @@
 //	}
 //	func (UserID) Prefix() string { return "user" }
 //
-// Create and parse IDs directly — no registration required:
+// Create a registry and register your types:
 //
-//	id, err := bpid.New(UserID{OrgID: 42, UserSeq: 1001})
-//	fmt.Println(id) // "user.<base64url(gob(data))>"
+//	var registry = bpid.MustNewRegistry(
+//	    bpid.WithType[UserID](),
+//	)
 //
-// For type-agnostic parsing with [ParseAny], register types first:
+// Serialize a struct into a prefixed string:
 //
-//	func init() {
-//	    bpid.RegisterType[UserID]()
-//	}
+//	s, err := bpid.Serialize(registry, UserID{OrgID: 42, UserSeq: 1001})
+//	// s = "user.<base64url(gob(data))>"
 //
-// IDs implement [fmt.Stringer], [encoding.TextMarshaler], [encoding.TextUnmarshaler],
-// [encoding/gob.GobEncoder], and [encoding/gob.GobDecoder]. The TextMarshaler/TextUnmarshaler
-// implementations enable automatic JSON, YAML, and TOML support.
+// Deserialize a prefixed string back into a struct:
 //
-// The global registry ([DefaultRegistry]) is used by [ParseAny] for type-agnostic
-// parsing. Register types with [RegisterType] before using [ParseAny]. The typed
-// functions [New] and [Parse] do not require registration.
+//	data, err := bpid.Deserialize[UserID](registry, s)
+//	// data = UserID{OrgID: 42, UserSeq: 1001}
+//
+// Extract the prefix for routing or switching:
+//
+//	prefix, err := registry.Prefix(s)
+//	// prefix = "user"
+//
+// [Registry] is immutable after creation and safe for concurrent use.
+// There is no global registry — consumers always create their own.
 //
 // Note: The encoded data uses Go's [encoding/gob] format, which means only Go
 // programs can decode the data embedded in an ID. Non-Go consumers can still

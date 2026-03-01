@@ -1,9 +1,9 @@
 package bpid
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -14,12 +14,21 @@ type testRegID struct {
 
 func (testRegID) Prefix() string { return "regtest" }
 
-// makeTestEncodedString creates a valid encoded ID string for registry tests.
-func makeTestEncodedString(prefix string) (string, []byte) {
-	data := testRegID{Val: 42}
-	raw, _ := encodeGob(data)
-	return prefix + "." + encodeBytes(raw), raw
+type testUserID struct {
+	OrgID   int64
+	UserSeq int64
 }
+
+func (testUserID) Prefix() string { return "user" }
+
+type testPostID struct {
+	BoardID int64
+	PostSeq int64
+}
+
+func (testPostID) Prefix() string { return "post" }
+
+// --- NewRegistry Tests ---
 
 func TestNewRegistry(t *testing.T) {
 	r, err := NewRegistry()
@@ -80,13 +89,12 @@ func TestMustNewRegistryPanics(t *testing.T) {
 	MustNewRegistry(WithSeparator(":"))
 }
 
+// --- WithType Tests ---
+
 func TestWithType(t *testing.T) {
-	r, err := NewRegistry(WithType[testRegID]())
+	_, err := NewRegistry(WithType[testRegID]())
 	if err != nil {
 		t.Fatalf("NewRegistry: %v", err)
-	}
-	if !r.IsRegistered("regtest") {
-		t.Error("regtest should be registered")
 	}
 }
 
@@ -103,265 +111,375 @@ func TestWithTypeDuplicate(t *testing.T) {
 	}
 }
 
-func TestIsRegistered(t *testing.T) {
-	r := MustNewRegistry(WithType[testRegID]())
-	if !r.IsRegistered("regtest") {
-		t.Error("regtest should be registered")
+// --- Prefix Validation (via WithType with bad prefix types) ---
+
+type badPrefixEmpty struct{}
+
+func (badPrefixEmpty) Prefix() string { return "" }
+
+type badPrefixUpper struct{}
+
+func (badPrefixUpper) Prefix() string { return "User" }
+
+func TestWithTypeInvalidPrefix(t *testing.T) {
+	tests := []struct {
+		name string
+		opt  RegistryOption
+	}{
+		{name: "empty prefix", opt: WithType[badPrefixEmpty]()},
+		{name: "uppercase prefix", opt: WithType[badPrefixUpper]()},
 	}
-	if r.IsRegistered("unknown") {
-		t.Error("unknown should not be registered")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewRegistry(tt.opt)
+			if err == nil {
+				t.Fatal("expected error for invalid prefix")
+			}
+			if !errors.Is(err, ErrInvalidPrefix) {
+				t.Errorf("error = %v, want ErrInvalidPrefix", err)
+			}
+		})
 	}
 }
 
-func TestRegistryRegister(t *testing.T) {
+// --- Serialize Tests ---
+
+func TestSerialize(t *testing.T) {
+	r := MustNewRegistry(WithType[testUserID]())
+	data := testUserID{OrgID: 42, UserSeq: 1001}
+
+	s, err := Serialize(r, data)
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	if !strings.HasPrefix(s, "user.") {
+		t.Errorf("Serialize() = %q, want prefix 'user.'", s)
+	}
+	if len(s) <= len("user.") {
+		t.Errorf("Serialize() = %q, encoded part is empty", s)
+	}
+}
+
+func TestSerializeDeterministic(t *testing.T) {
+	r := MustNewRegistry(WithType[testUserID]())
+	data := testUserID{OrgID: 42, UserSeq: 1001}
+
+	s1, _ := Serialize(r, data)
+	s2, _ := Serialize(r, data)
+	if s1 != s2 {
+		t.Errorf("Serialize not deterministic: %q != %q", s1, s2)
+	}
+}
+
+func TestSerializeUnregistered(t *testing.T) {
+	r := MustNewRegistry(WithType[testPostID]())
+	_, err := Serialize(r, testUserID{OrgID: 1, UserSeq: 1})
+	if err == nil {
+		t.Fatal("Serialize with unregistered type should error")
+	}
+	if !errors.Is(err, ErrUnregisteredPrefix) {
+		t.Errorf("error = %v, want ErrUnregisteredPrefix", err)
+	}
+}
+
+func TestMustSerialize(t *testing.T) {
+	r := MustNewRegistry(WithType[testUserID]())
+	data := testUserID{OrgID: 42, UserSeq: 1001}
+	s := MustSerialize(r, data)
+	if !strings.HasPrefix(s, "user.") {
+		t.Errorf("MustSerialize() = %q, want prefix 'user.'", s)
+	}
+}
+
+func TestMustSerializePanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("MustSerialize with unregistered type should panic")
+		}
+	}()
+	r := MustNewRegistry()
+	MustSerialize(r, testUserID{OrgID: 1, UserSeq: 1})
+}
+
+// --- Deserialize Tests ---
+
+func TestDeserialize(t *testing.T) {
+	r := MustNewRegistry(WithType[testUserID]())
+	data := testUserID{OrgID: 42, UserSeq: 1001}
+	s, _ := Serialize(r, data)
+
+	got, err := Deserialize[testUserID](r, s)
+	if err != nil {
+		t.Fatalf("Deserialize: %v", err)
+	}
+	if got != data {
+		t.Errorf("Deserialize() = %+v, want %+v", got, data)
+	}
+}
+
+func TestDeserializeErrors(t *testing.T) {
+	r := MustNewRegistry(WithType[testUserID](), WithType[testPostID]())
+	validS, _ := Serialize(r, testUserID{OrgID: 42, UserSeq: 1001})
+
 	tests := []struct {
 		name    string
-		prefix  string
+		input   string
 		wantErr error
 	}{
-		{name: "simple", prefix: "user", wantErr: nil},
-		{name: "with hyphen", prefix: "my-prefix", wantErr: nil},
-		{name: "with underscore", prefix: "a_b_c", wantErr: nil},
-		{name: "alphanumeric", prefix: "abc123", wantErr: nil},
-		{name: "single char", prefix: "u", wantErr: nil},
-		{name: "uppercase", prefix: "User", wantErr: ErrInvalidPrefix},
-		{name: "empty", prefix: "", wantErr: ErrInvalidPrefix},
-		{name: "contains dot", prefix: "user.name", wantErr: ErrInvalidPrefix},
-		{name: "contains space", prefix: "user name", wantErr: ErrInvalidPrefix},
-		{name: "special chars", prefix: "user!", wantErr: ErrInvalidPrefix},
-		{name: "starts with hyphen", prefix: "-user", wantErr: ErrInvalidPrefix},
-		{name: "starts with underscore", prefix: "_user", wantErr: ErrInvalidPrefix},
-		{name: "contains tilde", prefix: "user~name", wantErr: ErrInvalidPrefix},
+		{name: "empty string", input: "", wantErr: ErrEmptyString},
+		{name: "no separator", input: "userABCDEF", wantErr: ErrInvalidFormat},
+		{name: "wrong prefix", input: strings.Replace(validS, "user.", "post.", 1), wantErr: ErrPrefixMismatch},
+		{name: "invalid encoding", input: "user.!!invalid!!", wantErr: ErrInvalidEncoding},
+		{name: "only prefix", input: "user.", wantErr: ErrInvalidFormat},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := MustNewRegistry()
-			err := r.Register(tt.prefix)
-			if tt.wantErr != nil {
-				if err == nil {
-					t.Fatalf("Register(%q) = nil, want %v", tt.prefix, tt.wantErr)
-				}
-				if !errors.Is(err, tt.wantErr) {
-					t.Fatalf("Register(%q) = %v, want %v", tt.prefix, err, tt.wantErr)
-				}
-				return
+			_, err := Deserialize[testUserID](r, tt.input)
+			if err == nil {
+				t.Fatalf("Deserialize(%q) = nil error, want %v", tt.input, tt.wantErr)
 			}
-			if err != nil {
-				t.Fatalf("Register(%q) unexpected error: %v", tt.prefix, err)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Deserialize(%q) error = %v, want %v", tt.input, err, tt.wantErr)
 			}
 		})
 	}
 }
 
-func TestRegistryRegisterDuplicate(t *testing.T) {
-	r := MustNewRegistry()
-	if err := r.Register("user"); err != nil {
-		t.Fatalf("first Register: %v", err)
-	}
-	err := r.Register("user")
+func TestDeserializeUnregistered(t *testing.T) {
+	r := MustNewRegistry(WithType[testPostID]())
+	_, err := Deserialize[testUserID](r, "user.AAAA")
 	if err == nil {
-		t.Fatal("second Register = nil, want ErrDuplicatePrefix")
+		t.Fatal("Deserialize with unregistered type should error")
 	}
-	if !errors.Is(err, ErrDuplicatePrefix) {
-		t.Fatalf("second Register = %v, want ErrDuplicatePrefix", err)
-	}
-}
-
-func TestRegistryParseAny(t *testing.T) {
-	validUserStr, validUserRaw := makeTestEncodedString("user")
-	validPostStr, _ := makeTestEncodedString("post")
-
-	r := MustNewRegistry()
-	if err := r.Register("user"); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.Register("post"); err != nil {
-		t.Fatal(err)
-	}
-
-	tests := []struct {
-		name       string
-		input      string
-		wantPrefix string
-		wantRaw    []byte
-		wantErr    error
-	}{
-		{
-			name:       "valid user",
-			input:      validUserStr,
-			wantPrefix: "user",
-			wantRaw:    validUserRaw,
-		},
-		{
-			name:       "valid post",
-			input:      validPostStr,
-			wantPrefix: "post",
-		},
-		{
-			name:    "empty string",
-			input:   "",
-			wantErr: ErrEmptyString,
-		},
-		{
-			name:    "no separator",
-			input:   "userABCDEFGHIJKLMNOPQRSTU",
-			wantErr: ErrInvalidFormat,
-		},
-		{
-			name:    "unknown prefix",
-			input:   "unknown." + encodeBytes(validUserRaw),
-			wantErr: ErrUnknownPrefix,
-		},
-		{
-			name:    "invalid encoding",
-			input:   "user.!!invalid!!",
-			wantErr: ErrInvalidEncoding,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			prefix, rawBytes, err := r.ParseAny(tt.input)
-			if tt.wantErr != nil {
-				if err == nil {
-					t.Fatalf("ParseAny(%q) = nil error, want %v", tt.input, tt.wantErr)
-				}
-				if !errors.Is(err, tt.wantErr) {
-					t.Fatalf("ParseAny(%q) error = %v, want %v", tt.input, err, tt.wantErr)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("ParseAny(%q) unexpected error: %v", tt.input, err)
-			}
-			if prefix != tt.wantPrefix {
-				t.Errorf("ParseAny(%q) prefix = %q, want %q", tt.input, prefix, tt.wantPrefix)
-			}
-			if tt.wantRaw != nil && !bytes.Equal(rawBytes, tt.wantRaw) {
-				t.Errorf("ParseAny(%q) raw bytes mismatch", tt.input)
-			}
-		})
+	if !errors.Is(err, ErrUnregisteredPrefix) {
+		t.Errorf("error = %v, want ErrUnregisteredPrefix", err)
 	}
 }
 
-func TestRegistryParseAnyWithCustomSeparator(t *testing.T) {
-	data := testRegID{Val: 42}
-	raw, _ := encodeGob(data)
-	encoded := encodeBytes(raw)
+// --- Round-trip Tests ---
 
-	r := MustNewRegistry(WithSeparator("~"))
-	if err := r.Register("user"); err != nil {
-		t.Fatal(err)
-	}
+func TestSerializeDeserializeRoundTrip(t *testing.T) {
+	r := MustNewRegistry(WithType[testUserID]())
+	data := testUserID{OrgID: 42, UserSeq: 1001}
 
-	// Should parse with ~ separator
-	prefix, rawBytes, err := r.ParseAny("user~" + encoded)
+	s, err := Serialize(r, data)
 	if err != nil {
-		t.Fatalf("ParseAny with ~ separator: %v", err)
+		t.Fatalf("Serialize: %v", err)
+	}
+	got, err := Deserialize[testUserID](r, s)
+	if err != nil {
+		t.Fatalf("Deserialize: %v", err)
+	}
+	if got != data {
+		t.Errorf("round-trip: got %+v, want %+v", got, data)
+	}
+}
+
+func TestRoundTripMultipleTypes(t *testing.T) {
+	r := MustNewRegistry(WithType[testUserID](), WithType[testPostID]())
+
+	userData := testUserID{OrgID: 1, UserSeq: 2}
+	postData := testPostID{BoardID: 3, PostSeq: 4}
+
+	userS, _ := Serialize(r, userData)
+	postS, _ := Serialize(r, postData)
+
+	if strings.HasPrefix(userS, "post.") {
+		t.Error("userS should not have post prefix")
+	}
+	if strings.HasPrefix(postS, "user.") {
+		t.Error("postS should not have user prefix")
+	}
+
+	gotUser, err := Deserialize[testUserID](r, userS)
+	if err != nil {
+		t.Fatalf("Deserialize user: %v", err)
+	}
+	if gotUser != userData {
+		t.Errorf("user round-trip: got %+v, want %+v", gotUser, userData)
+	}
+
+	gotPost, err := Deserialize[testPostID](r, postS)
+	if err != nil {
+		t.Fatalf("Deserialize post: %v", err)
+	}
+	if gotPost != postData {
+		t.Errorf("post round-trip: got %+v, want %+v", gotPost, postData)
+	}
+}
+
+// --- Registry.Prefix Tests ---
+
+func TestRegistryPrefix(t *testing.T) {
+	r := MustNewRegistry(WithType[testUserID](), WithType[testPostID]())
+	s, _ := Serialize(r, testUserID{OrgID: 42, UserSeq: 1001})
+
+	prefix, err := r.Prefix(s)
+	if err != nil {
+		t.Fatalf("Prefix: %v", err)
 	}
 	if prefix != "user" {
-		t.Errorf("prefix = %q, want %q", prefix, "user")
-	}
-	if !bytes.Equal(rawBytes, raw) {
-		t.Error("raw bytes mismatch")
-	}
-
-	// Should fail with . separator
-	_, _, err = r.ParseAny("user." + encoded)
-	if err == nil {
-		t.Fatal("ParseAny with . separator should fail for ~ registry")
-	}
-	if !errors.Is(err, ErrInvalidFormat) {
-		t.Fatalf("error = %v, want ErrInvalidFormat", err)
+		t.Errorf("Prefix() = %q, want %q", prefix, "user")
 	}
 }
 
-func TestRegistryConcurrency(t *testing.T) {
-	r := MustNewRegistry()
-	var wg sync.WaitGroup
-	errs := make(chan error, 200)
+func TestRegistryPrefixErrors(t *testing.T) {
+	r := MustNewRegistry(WithType[testUserID]())
 
-	// Spawn goroutines registering different prefixes
-	for i := range 100 {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr error
+	}{
+		{name: "empty string", input: "", wantErr: ErrEmptyString},
+		{name: "no separator", input: "userABCDEF", wantErr: ErrInvalidFormat},
+		{name: "unregistered", input: "unknown.ABCDEF", wantErr: ErrUnregisteredPrefix},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := r.Prefix(tt.input)
+			if err == nil {
+				t.Fatalf("Prefix(%q) = nil error, want %v", tt.input, tt.wantErr)
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Prefix(%q) error = %v, want %v", tt.input, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// --- Custom Separator Tests ---
+
+func TestSerializeDeserializeCustomSeparator(t *testing.T) {
+	r := MustNewRegistry(WithSeparator("~"), WithType[testUserID]())
+	data := testUserID{OrgID: 42, UserSeq: 1001}
+
+	s, err := Serialize(r, data)
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	if !strings.HasPrefix(s, "user~") {
+		t.Errorf("Serialize() = %q, want prefix 'user~'", s)
+	}
+
+	got, err := Deserialize[testUserID](r, s)
+	if err != nil {
+		t.Fatalf("Deserialize: %v", err)
+	}
+	if got != data {
+		t.Errorf("round-trip with ~ separator: got %+v, want %+v", got, data)
+	}
+
+	// Prefix extraction should work with ~
+	prefix, err := r.Prefix(s)
+	if err != nil {
+		t.Fatalf("Prefix: %v", err)
+	}
+	if prefix != "user" {
+		t.Errorf("Prefix() = %q, want %q", prefix, "user")
+	}
+}
+
+func TestDeserializeWrongSeparator(t *testing.T) {
+	rDot := MustNewRegistry(WithType[testUserID]())
+	rTilde := MustNewRegistry(WithSeparator("~"), WithType[testUserID]())
+
+	s, _ := Serialize(rDot, testUserID{OrgID: 42, UserSeq: 1001})
+
+	// Try deserializing dot-serialized string with tilde registry
+	_, err := Deserialize[testUserID](rTilde, s)
+	if err == nil {
+		t.Fatal("Deserialize with wrong separator should fail")
+	}
+}
+
+// --- Concurrency Tests ---
+
+func TestConcurrentSerialize(t *testing.T) {
+	r := MustNewRegistry(WithType[testUserID]())
+	const n = 100
+	results := make([]string, n)
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+
+	for i := range n {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			prefix := fmt.Sprintf("prefix%d", i)
-			if err := r.Register(prefix); err != nil {
-				errs <- fmt.Errorf("Register(%q): %v", prefix, err)
-			}
+			results[i], errs[i] = Serialize(r, testUserID{OrgID: int64(i), UserSeq: int64(i * 10)})
 		}(i)
 	}
-
 	wg.Wait()
-	close(errs)
 
-	for err := range errs {
-		t.Error(err)
-	}
-
-	// Now parse concurrently
-	data := testRegID{Val: 42}
-	raw, _ := encodeGob(data)
-	encoded := encodeBytes(raw)
-
-	var wg2 sync.WaitGroup
-	errs2 := make(chan error, 200)
-
-	for i := range 100 {
-		wg2.Add(1)
-		go func(i int) {
-			defer wg2.Done()
-			prefix := fmt.Sprintf("prefix%d", i)
-			s := prefix + "." + encoded
-			gotPrefix, gotRaw, err := r.ParseAny(s)
-			if err != nil {
-				errs2 <- fmt.Errorf("ParseAny(%q): %v", s, err)
-				return
-			}
-			if gotPrefix != prefix {
-				errs2 <- fmt.Errorf("ParseAny(%q) prefix = %q, want %q", s, gotPrefix, prefix)
-			}
-			if !bytes.Equal(gotRaw, raw) {
-				errs2 <- fmt.Errorf("ParseAny(%q) raw bytes mismatch", s)
-			}
-		}(i)
-	}
-
-	wg2.Wait()
-	close(errs2)
-
-	for err := range errs2 {
-		t.Error(err)
+	seen := make(map[string]bool, n)
+	for i, s := range results {
+		if errs[i] != nil {
+			t.Errorf("Serialize[%d] error: %v", i, errs[i])
+			continue
+		}
+		if seen[s] {
+			t.Errorf("Serialize[%d] duplicate: %s", i, s)
+		}
+		seen[s] = true
 	}
 }
 
-func TestDefaultRegistryDelegation(t *testing.T) {
-	// The DefaultRegistry() function returns the global registry.
-	// RegisterType populates it. The "regtest" prefix is already registered
-	// by TestMain, so we can use ParseAny to verify delegation.
-	data := testRegID{Val: 42}
-	raw, _ := encodeGob(data)
-	encoded := encodeBytes(raw)
+func TestConcurrentDeserialize(t *testing.T) {
+	r := MustNewRegistry(WithType[testUserID]())
+	data := testUserID{OrgID: 42, UserSeq: 1001}
+	s, _ := Serialize(r, data)
 
-	prefix, rawBytes, err := ParseAny("regtest." + encoded)
-	if err != nil {
-		t.Fatalf("ParseAny: %v", err)
-	}
-	if prefix != "regtest" {
-		t.Errorf("prefix = %q, want %q", prefix, "regtest")
-	}
-	if !bytes.Equal(rawBytes, raw) {
-		t.Error("raw bytes mismatch")
-	}
+	const n = 100
+	results := make([]testUserID, n)
+	errs := make([]error, n)
+	var wg sync.WaitGroup
 
-	// Verify DefaultRegistry() returns a valid registry.
-	r := DefaultRegistry()
-	if r == nil {
-		t.Fatal("DefaultRegistry() returned nil")
+	for i := range n {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			results[i], errs[i] = Deserialize[testUserID](r, s)
+		}(i)
 	}
-	if !r.IsRegistered("regtest") {
-		t.Error("regtest should be registered in DefaultRegistry")
+	wg.Wait()
+
+	for i := range n {
+		if errs[i] != nil {
+			t.Errorf("Deserialize[%d] error: %v", i, errs[i])
+			continue
+		}
+		if results[i] != data {
+			t.Errorf("Deserialize[%d] = %+v, want %+v", i, results[i], data)
+		}
 	}
+}
+
+func TestConcurrentMixedOperations(t *testing.T) {
+	r := MustNewRegistry(WithType[testUserID]())
+	const n = 50
+	var wg sync.WaitGroup
+
+	for i := range n {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			data := testUserID{OrgID: int64(i), UserSeq: int64(i * 10)}
+			s, err := Serialize(r, data)
+			if err != nil {
+				t.Errorf("goroutine %d Serialize error: %v", i, err)
+				return
+			}
+			got, err := Deserialize[testUserID](r, s)
+			if err != nil {
+				t.Errorf("goroutine %d Deserialize error: %v", i, err)
+				return
+			}
+			if got != data {
+				t.Errorf("goroutine %d round-trip mismatch: got %+v, want %+v", i, got, data)
+			}
+		}(i)
+	}
+	wg.Wait()
 }

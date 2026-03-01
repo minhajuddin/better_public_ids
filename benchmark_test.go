@@ -1,10 +1,6 @@
 package bpid
 
-import (
-	"bytes"
-	"encoding/gob"
-	"testing"
-)
+import "testing"
 
 type benchUserID struct {
 	OrgID   int64
@@ -13,72 +9,32 @@ type benchUserID struct {
 
 func (benchUserID) Prefix() string { return "benchuser" }
 
-func BenchmarkNew(b *testing.B) {
+var benchRegistry = MustNewRegistry(WithType[benchUserID]())
+
+func BenchmarkSerialize(b *testing.B) {
 	for b.Loop() {
-		_, _ = New(benchUserID{OrgID: 42, UserSeq: 1001})
+		_, _ = Serialize(benchRegistry, benchUserID{OrgID: 42, UserSeq: 1001})
 	}
 }
 
-func BenchmarkString(b *testing.B) {
-	id := MustNew(benchUserID{OrgID: 42, UserSeq: 1001})
-	b.ResetTimer()
+func BenchmarkMustSerialize(b *testing.B) {
 	for b.Loop() {
-		_ = id.String()
+		_ = MustSerialize(benchRegistry, benchUserID{OrgID: 42, UserSeq: 1001})
 	}
 }
 
-func BenchmarkParse(b *testing.B) {
-	id := MustNew(benchUserID{OrgID: 42, UserSeq: 1001})
-	s := id.String()
+func BenchmarkDeserialize(b *testing.B) {
+	s := MustSerialize(benchRegistry, benchUserID{OrgID: 42, UserSeq: 1001})
 	b.ResetTimer()
 	for b.Loop() {
-		_, _ = Parse[benchUserID](s)
+		_, _ = Deserialize[benchUserID](benchRegistry, s)
 	}
 }
 
-func BenchmarkData(b *testing.B) {
-	id := MustNew(benchUserID{OrgID: 42, UserSeq: 1001})
+func BenchmarkRegistryPrefix(b *testing.B) {
+	s := MustSerialize(benchRegistry, benchUserID{OrgID: 42, UserSeq: 1001})
 	b.ResetTimer()
 	for b.Loop() {
-		_, _ = id.Data()
-	}
-}
-
-func BenchmarkEqual(b *testing.B) {
-	id1 := MustNew(benchUserID{OrgID: 42, UserSeq: 1001})
-	id2 := MustNew(benchUserID{OrgID: 42, UserSeq: 1001})
-	b.ResetTimer()
-	for b.Loop() {
-		_ = id1.Equal(id2)
-	}
-}
-
-func BenchmarkGobEncode(b *testing.B) {
-	id := MustNew(benchUserID{OrgID: 42, UserSeq: 1001})
-	b.ResetTimer()
-	for b.Loop() {
-		var buf bytes.Buffer
-		_ = gob.NewEncoder(&buf).Encode(&id)
-	}
-}
-
-func BenchmarkGobDecode(b *testing.B) {
-	id := MustNew(benchUserID{OrgID: 42, UserSeq: 1001})
-	var buf bytes.Buffer
-	_ = gob.NewEncoder(&buf).Encode(&id)
-	data := buf.Bytes()
-	b.ResetTimer()
-	for b.Loop() {
-		var parsed ID[benchUserID]
-		_ = gob.NewDecoder(bytes.NewReader(data)).Decode(&parsed)
-	}
-}
-
-func BenchmarkRegistryParseAny(b *testing.B) {
-	id := MustNew(benchUserID{OrgID: 42, UserSeq: 1001})
-	s := id.String()
-	b.ResetTimer()
-	for b.Loop() {
-		_, _, _ = ParseAny(s)
+		_, _ = benchRegistry.Prefix(s)
 	}
 }

@@ -21,9 +21,9 @@ var (
 	// ErrEmptyString is returned when attempting to parse an empty string.
 	ErrEmptyString = errors.New("bpid: cannot parse empty string")
 
-	// ErrUnknownPrefix is returned by [Registry.ParseAny] when the prefix is
-	// not registered.
-	ErrUnknownPrefix = errors.New("bpid: unknown prefix")
+	// ErrUnregisteredPrefix is returned when a prefix is not registered
+	// in the registry.
+	ErrUnregisteredPrefix = errors.New("bpid: unregistered prefix")
 
 	// ErrDuplicatePrefix is returned when registering a prefix that is already
 	// registered.
