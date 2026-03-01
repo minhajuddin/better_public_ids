@@ -2,6 +2,7 @@ package bpid
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -207,6 +208,66 @@ func TestDecodeBytesInvalid(t *testing.T) {
 	}
 	if !errors.Is(err, ErrInvalidEncoding) {
 		t.Errorf("error = %v, want ErrInvalidEncoding", err)
+	}
+}
+
+// --- NewCodec Tests ---
+
+func TestNewCodecRoundTrip(t *testing.T) {
+	c := NewCodec(json.Marshal, json.Unmarshal)
+
+	tests := []struct {
+		name string
+		data testEncID
+	}{
+		{name: "zero value", data: testEncID{}},
+		{name: "positive values", data: testEncID{OrgID: 42, UserSeq: 1001}},
+		{name: "negative values", data: testEncID{OrgID: -1, UserSeq: -999}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := c.Marshal(tt.data)
+			if err != nil {
+				t.Fatalf("Marshal: %v", err)
+			}
+			if len(raw) == 0 {
+				t.Fatal("Marshal returned empty bytes")
+			}
+
+			var got testEncID
+			if err := c.Unmarshal(raw, &got); err != nil {
+				t.Fatalf("Unmarshal: %v", err)
+			}
+			if got != tt.data {
+				t.Errorf("round-trip: got %+v, want %+v", got, tt.data)
+			}
+		})
+	}
+}
+
+func TestNewCodecWithRegistry(t *testing.T) {
+	r := MustNewRegistry(
+		WithCodec(NewCodec(json.Marshal, json.Unmarshal)),
+		WithType[testEncID]("test"),
+	)
+
+	data := testEncID{OrgID: 42, UserSeq: 1001}
+
+	s, err := Serialize(r, data)
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	if s == "" {
+		t.Fatal("Serialize returned empty string")
+	}
+
+	got, err := Deserialize[testEncID](r, s)
+	if err != nil {
+		t.Fatalf("Deserialize: %v", err)
+	}
+	if got != data {
+		t.Errorf("round-trip: got %+v, want %+v", got, data)
 	}
 }
 

@@ -14,6 +14,23 @@ type Codec interface {
 	Unmarshal(data []byte, v any) error
 }
 
+// funcCodec adapts marshal/unmarshal functions into a Codec.
+type funcCodec struct {
+	marshal   func(v any) ([]byte, error)
+	unmarshal func(data []byte, v any) error
+}
+
+func (c funcCodec) Marshal(v any) ([]byte, error)     { return c.marshal(v) }
+func (c funcCodec) Unmarshal(data []byte, v any) error { return c.unmarshal(data, v) }
+
+// NewCodec creates a [Codec] from a marshal and unmarshal function pair.
+func NewCodec(
+	marshal func(v any) ([]byte, error),
+	unmarshal func(data []byte, v any) error,
+) Codec {
+	return funcCodec{marshal: marshal, unmarshal: unmarshal}
+}
+
 // GobCodec is the default [Codec] that uses [encoding/gob].
 // A fresh encoder/decoder is created on every call, so type descriptors are
 // always included and the output is deterministic for equal inputs.

@@ -108,7 +108,16 @@ type Codec interface {
 }
 ```
 
-Example with `encoding/json`:
+For simple cases where marshal/unmarshal functions already exist, use `NewCodec`:
+
+```go
+reg := bpid.MustNewRegistry(
+    bpid.WithCodec(bpid.NewCodec(json.Marshal, json.Unmarshal)),
+    bpid.WithType[UserID]("user"),
+)
+```
+
+Or define a named struct for more control:
 
 ```go
 type JSONCodec struct{}
@@ -193,6 +202,7 @@ func MustNewRegistry(opts ...RegistryOption) *Registry
 func WithType[T any](prefix string) RegistryOption
 func WithSeparator(sep string) RegistryOption
 func WithCodec(c Codec) RegistryOption
+func NewCodec(marshal func(any) ([]byte, error), unmarshal func([]byte, any) error) Codec
 
 func (*Registry) Prefix(s string) (string, error)
 func (*Registry) Separator() string

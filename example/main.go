@@ -182,12 +182,6 @@ func jsonCodecExample() {
 	fmt.Printf("JSON OrderID deserialized: ShopID=%d OrderSeq=%d\n", back.ShopID, back.OrderSeq)
 }
 
-// MsgpackCodec implements bpid.Codec using msgpack.
-type MsgpackCodec struct{}
-
-func (MsgpackCodec) Marshal(v any) ([]byte, error)     { return msgpack.Marshal(v) }
-func (MsgpackCodec) Unmarshal(data []byte, v any) error { return msgpack.Unmarshal(data, v) }
-
 func msgpackExample() {
 	fmt.Println("========================================")
 	fmt.Println("  Custom Codec (msgpack)")
@@ -195,7 +189,7 @@ func msgpackExample() {
 	fmt.Println()
 
 	r := bpid.MustNewRegistry(
-		bpid.WithCodec(MsgpackCodec{}),
+		bpid.WithCodec(bpid.NewCodec(msgpack.Marshal, msgpack.Unmarshal)),
 		bpid.WithType[SessionID]("sess"),
 	)
 
