@@ -4,7 +4,7 @@
 // interface. The struct's exported fields ARE the ID's data, serialized using
 // [encoding/gob] and encoded as base64url without padding.
 //
-// All types must be registered in a [Registry] before use:
+// Define an ID type by implementing [PublicID]:
 //
 //	type UserID struct {
 //	    OrgID   int64
@@ -12,18 +12,27 @@
 //	}
 //	func (UserID) Prefix() string { return "user" }
 //
-//	func init() {
-//	    bpid.DefaultRegistry = bpid.MustNewRegistry(
-//	        bpid.WithType[UserID](),
-//	    )
-//	}
+// Create and parse IDs directly — no registration required:
 //
 //	id, err := bpid.New(UserID{OrgID: 42, UserSeq: 1001})
 //	fmt.Println(id) // "user.<base64url(gob(data))>"
 //
-// IDs implement [fmt.Stringer], [encoding/gob.GobEncoder], and [encoding/gob.GobDecoder].
+// For type-agnostic parsing with [ParseAny], register types first:
 //
-// The [DefaultRegistry] is used by top-level functions like [New], [Parse],
-// and [ParseAny]. Custom [Registry] instances can be created for testing
-// or isolation.
+//	func init() {
+//	    bpid.RegisterType[UserID]()
+//	}
+//
+// IDs implement [fmt.Stringer], [encoding.TextMarshaler], [encoding.TextUnmarshaler],
+// [encoding/gob.GobEncoder], and [encoding/gob.GobDecoder]. The TextMarshaler/TextUnmarshaler
+// implementations enable automatic JSON, YAML, and TOML support.
+//
+// The global registry ([DefaultRegistry]) is used by [ParseAny] for type-agnostic
+// parsing. Register types with [RegisterType] before using [ParseAny]. The typed
+// functions [New] and [Parse] do not require registration.
+//
+// Note: The encoded data uses Go's [encoding/gob] format, which means only Go
+// programs can decode the data embedded in an ID. Non-Go consumers can still
+// use IDs as opaque strings (compare, store, transmit) but cannot extract
+// the embedded data.
 package bpid

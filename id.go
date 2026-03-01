@@ -14,13 +14,7 @@ type ID[T PublicID] struct {
 }
 
 // New creates a new ID by gob-encoding the provided data.
-// The type's prefix must be registered in [DefaultRegistry].
 func New[T PublicID](data T) (ID[T], error) {
-	var zero T
-	prefix := zero.Prefix()
-	if !DefaultRegistry.IsRegistered(prefix) {
-		return ID[T]{}, fmt.Errorf("%w: %q", ErrUnknownPrefix, prefix)
-	}
 	raw, err := encodeGob(data)
 	if err != nil {
 		return ID[T]{}, err
@@ -38,24 +32,19 @@ func MustNew[T PublicID](data T) ID[T] {
 }
 
 // Parse parses a prefixed ID string like "user.<base64url(gob(data))>".
-// It validates that the prefix matches type T's prefix and that the encoded
-// bytes are valid gob for type T. The type's prefix must be registered in [DefaultRegistry].
+// It validates that the prefix matches type T's prefix. The separator is
+// always "." regardless of any custom [Registry] separator.
 func Parse[T PublicID](s string) (ID[T], error) {
 	var zero T
 	prefix := zero.Prefix()
-
-	if !DefaultRegistry.IsRegistered(prefix) {
-		return ID[T]{}, fmt.Errorf("%w: %q", ErrUnknownPrefix, prefix)
-	}
 
 	if s == "" {
 		return ID[T]{}, ErrEmptyString
 	}
 
-	sep := DefaultRegistry.Separator()
-	gotPrefix, encoded, ok := strings.Cut(s, sep)
+	gotPrefix, encoded, ok := strings.Cut(s, defaultSeparator)
 	if !ok {
-		return ID[T]{}, fmt.Errorf("%w: no separator %q found in %q", ErrInvalidFormat, sep, s)
+		return ID[T]{}, fmt.Errorf("%w: no separator %q found in %q", ErrInvalidFormat, defaultSeparator, s)
 	}
 
 	if gotPrefix != prefix {
@@ -67,9 +56,8 @@ func Parse[T PublicID](s string) (ID[T], error) {
 		return ID[T]{}, err
 	}
 
-	// Validate that the bytes actually decode to a T (catch corruption early)
-	if _, err := decodeGob[T](raw); err != nil {
-		return ID[T]{}, err
+	if len(raw) == 0 {
+		return ID[T]{}, fmt.Errorf("%w: empty encoded data", ErrInvalidFormat)
 	}
 
 	return ID[T]{raw: raw}, nil
@@ -93,16 +81,14 @@ func (id ID[T]) Data() (T, error) {
 	return decodeGob[T](id.raw)
 }
 
-// String returns the prefixed string representation.
+// String returns the prefixed string representation using "." as the separator.
 // For the zero value, it returns "".
 func (id ID[T]) String() string {
 	if id.IsZero() {
 		return ""
 	}
 	var zero T
-	prefix := zero.Prefix()
-	sep := DefaultRegistry.Separator()
-	return prefix + sep + encodeBytes(id.raw)
+	return zero.Prefix() + defaultSeparator + encodeBytes(id.raw)
 }
 
 // IsZero reports whether the ID is the zero value (no data set).
@@ -119,6 +105,27 @@ func (id ID[T]) Equal(other ID[T]) bool {
 func (id ID[T]) Prefix() string {
 	var zero T
 	return zero.Prefix()
+}
+
+// MarshalText implements [encoding.TextMarshaler].
+// This enables JSON, YAML, and TOML serialization automatically.
+func (id ID[T]) MarshalText() ([]byte, error) {
+	return []byte(id.String()), nil
+}
+
+// UnmarshalText implements [encoding.TextUnmarshaler].
+// This enables JSON, YAML, and TOML deserialization automatically.
+func (id *ID[T]) UnmarshalText(data []byte) error {
+	if len(data) == 0 {
+		*id = ID[T]{}
+		return nil
+	}
+	parsed, err := Parse[T](string(data))
+	if err != nil {
+		return err
+	}
+	*id = parsed
+	return nil
 }
 
 // GobEncode implements [encoding/gob.GobEncoder].

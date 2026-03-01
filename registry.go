@@ -16,7 +16,7 @@ type RegistryOption func(*Registry) error
 func WithSeparator(sep string) RegistryOption {
 	return func(r *Registry) error {
 		if sep != "." && sep != "~" {
-			return fmt.Errorf("bpid: invalid separator %q: must be '.' or '~'", sep)
+			return fmt.Errorf("%w: got %q", ErrInvalidSeparator, sep)
 		}
 		r.separator = sep
 		return nil
@@ -123,11 +123,31 @@ func (r *Registry) Separator() string {
 	return r.separator
 }
 
-// DefaultRegistry is the global registry used by top-level functions.
-// Configure it with [MustNewRegistry] and [WithType] before creating or parsing IDs.
-var DefaultRegistry = MustNewRegistry()
+// defaultRegistry is the global registry used by [ParseAny] and [RegisterType].
+// It is not directly replaceable; use [RegisterType] to add prefixes.
+var defaultRegistry = MustNewRegistry()
 
-// ParseAny parses a prefixed ID string using the [DefaultRegistry].
+// DefaultRegistry returns the global registry. Use [RegisterType] to register
+// prefixes rather than calling Register on the returned registry directly.
+func DefaultRegistry() *Registry {
+	return defaultRegistry
+}
+
+// RegisterType registers a [PublicID] type's prefix in the global registry.
+// This must be called (typically in init or main) before using [ParseAny].
+// It is idempotent: registering an already-registered prefix is a no-op.
+func RegisterType[T PublicID]() {
+	var zero T
+	prefix := zero.Prefix()
+	if defaultRegistry.IsRegistered(prefix) {
+		return
+	}
+	if err := defaultRegistry.Register(prefix); err != nil {
+		panic(fmt.Sprintf("bpid.RegisterType: %v", err))
+	}
+}
+
+// ParseAny parses a prefixed ID string using the global registry.
 func ParseAny(s string) (prefix string, rawBytes []byte, err error) {
-	return DefaultRegistry.ParseAny(s)
+	return defaultRegistry.ParseAny(s)
 }

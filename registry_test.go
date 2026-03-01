@@ -57,6 +57,9 @@ func TestWithSeparatorErrors(t *testing.T) {
 			if err == nil {
 				t.Errorf("NewRegistry(WithSeparator(%q)) should error", sep)
 			}
+			if !errors.Is(err, ErrInvalidSeparator) {
+				t.Errorf("error = %v, want ErrInvalidSeparator", err)
+			}
 		})
 	}
 }
@@ -335,26 +338,30 @@ func TestRegistryConcurrency(t *testing.T) {
 }
 
 func TestDefaultRegistryDelegation(t *testing.T) {
-	origRegistry := DefaultRegistry
-	DefaultRegistry = MustNewRegistry()
-	defer func() { DefaultRegistry = origRegistry }()
-
-	if err := DefaultRegistry.Register("testdel"); err != nil {
-		t.Fatalf("Register: %v", err)
-	}
-
+	// The DefaultRegistry() function returns the global registry.
+	// RegisterType populates it. The "regtest" prefix is already registered
+	// by TestMain, so we can use ParseAny to verify delegation.
 	data := testRegID{Val: 42}
 	raw, _ := encodeGob(data)
 	encoded := encodeBytes(raw)
 
-	prefix, rawBytes, err := ParseAny("testdel." + encoded)
+	prefix, rawBytes, err := ParseAny("regtest." + encoded)
 	if err != nil {
 		t.Fatalf("ParseAny: %v", err)
 	}
-	if prefix != "testdel" {
-		t.Errorf("prefix = %q, want %q", prefix, "testdel")
+	if prefix != "regtest" {
+		t.Errorf("prefix = %q, want %q", prefix, "regtest")
 	}
 	if !bytes.Equal(rawBytes, raw) {
 		t.Error("raw bytes mismatch")
+	}
+
+	// Verify DefaultRegistry() returns a valid registry.
+	r := DefaultRegistry()
+	if r == nil {
+		t.Fatal("DefaultRegistry() returned nil")
+	}
+	if !r.IsRegistered("regtest") {
+		t.Error("regtest should be registered in DefaultRegistry")
 	}
 }

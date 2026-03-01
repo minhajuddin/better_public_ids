@@ -2,7 +2,9 @@ package bpid
 
 import (
 	"bytes"
+	"encoding"
 	"encoding/gob"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -27,9 +29,11 @@ func (testPostID) Prefix() string { return "post" }
 
 // Compile-time interface compliance checks
 var (
-	_ fmt.Stringer   = ID[testUserID]{}
-	_ gob.GobEncoder = ID[testUserID]{}
-	_ gob.GobDecoder = (*ID[testUserID])(nil)
+	_ fmt.Stringer             = ID[testUserID]{}
+	_ gob.GobEncoder           = ID[testUserID]{}
+	_ gob.GobDecoder           = (*ID[testUserID])(nil)
+	_ encoding.TextMarshaler   = ID[testUserID]{}
+	_ encoding.TextUnmarshaler = (*ID[testUserID])(nil)
 )
 
 // --- Constructor Tests ---
@@ -106,7 +110,7 @@ func TestParse(t *testing.T) {
 		{name: "wrong prefix", input: strings.Replace(validStr, "user.", "post.", 1), wantErr: ErrPrefixMismatch},
 		{name: "no separator", input: "user" + "ABCDEF", wantErr: ErrInvalidFormat},
 		{name: "invalid encoding", input: "user.!!invalid!!", wantErr: ErrInvalidEncoding},
-		{name: "only prefix", input: "user.", wantErr: ErrDecodingFailed},
+		{name: "only prefix", input: "user.", wantErr: ErrInvalidFormat},
 		{name: "whitespace prefix", input: " user." + encodeBytes(validID.raw), wantErr: ErrPrefixMismatch},
 	}
 
@@ -404,22 +408,28 @@ type testUnregID struct {
 func (testUnregID) Prefix() string { return "unreg" }
 
 func TestNewUnregistered(t *testing.T) {
-	_, err := New(testUnregID{X: 1})
-	if err == nil {
-		t.Fatal("New with unregistered type should error")
+	// New no longer requires registration — only ParseAny does.
+	id, err := New(testUnregID{X: 1})
+	if err != nil {
+		t.Fatalf("New with unregistered type should succeed: %v", err)
 	}
-	if !errors.Is(err, ErrUnknownPrefix) {
-		t.Fatalf("error = %v, want ErrUnknownPrefix", err)
+	if id.IsZero() {
+		t.Error("New should return non-zero ID")
 	}
 }
 
 func TestParseUnregistered(t *testing.T) {
-	_, err := Parse[testUnregID]("unreg.AAAAAAAAAA")
-	if err == nil {
-		t.Fatal("Parse with unregistered type should error")
+	// Parse no longer requires registration — only ParseAny does.
+	id, err := New(testUnregID{X: 42})
+	if err != nil {
+		t.Fatalf("New: %v", err)
 	}
-	if !errors.Is(err, ErrUnknownPrefix) {
-		t.Fatalf("error = %v, want ErrUnknownPrefix", err)
+	parsed, err := Parse[testUnregID](id.String())
+	if err != nil {
+		t.Fatalf("Parse with unregistered type should succeed: %v", err)
+	}
+	if !id.Equal(parsed) {
+		t.Error("round-trip failed for unregistered type")
 	}
 }
 
@@ -540,4 +550,113 @@ func TestConcurrentMixedOperations(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+// --- Text/JSON Serialization Tests ---
+
+func TestMarshalText(t *testing.T) {
+	id := MustNew(testUserID{OrgID: 42, UserSeq: 1001})
+	text, err := id.MarshalText()
+	if err != nil {
+		t.Fatalf("MarshalText: %v", err)
+	}
+	if string(text) != id.String() {
+		t.Errorf("MarshalText() = %q, want %q", text, id.String())
+	}
+}
+
+func TestMarshalTextZero(t *testing.T) {
+	var id ID[testUserID]
+	text, err := id.MarshalText()
+	if err != nil {
+		t.Fatalf("MarshalText: %v", err)
+	}
+	if string(text) != "" {
+		t.Errorf("zero ID MarshalText() = %q, want %q", text, "")
+	}
+}
+
+func TestUnmarshalText(t *testing.T) {
+	id := MustNew(testUserID{OrgID: 42, UserSeq: 1001})
+	text, _ := id.MarshalText()
+
+	var parsed ID[testUserID]
+	if err := parsed.UnmarshalText(text); err != nil {
+		t.Fatalf("UnmarshalText: %v", err)
+	}
+	if !id.Equal(parsed) {
+		t.Error("text round-trip failed")
+	}
+}
+
+func TestUnmarshalTextEmpty(t *testing.T) {
+	var id ID[testUserID]
+	if err := id.UnmarshalText([]byte{}); err != nil {
+		t.Fatalf("UnmarshalText(empty): %v", err)
+	}
+	if !id.IsZero() {
+		t.Error("UnmarshalText(empty) should produce zero ID")
+	}
+}
+
+func TestUnmarshalTextInvalid(t *testing.T) {
+	var id ID[testUserID]
+	err := id.UnmarshalText([]byte("invalid"))
+	if err == nil {
+		t.Fatal("UnmarshalText with invalid input should error")
+	}
+}
+
+func TestJSONRoundTrip(t *testing.T) {
+	type wrapper struct {
+		ID ID[testUserID] `json:"id"`
+	}
+
+	original := wrapper{ID: MustNew(testUserID{OrgID: 42, UserSeq: 1001})}
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	// JSON should contain the string representation
+	want := fmt.Sprintf(`{"id":%q}`, original.ID.String())
+	if string(data) != want {
+		t.Errorf("json.Marshal = %s, want %s", data, want)
+	}
+
+	var parsed wrapper
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if !original.ID.Equal(parsed.ID) {
+		t.Error("JSON round-trip failed")
+	}
+
+	got, _ := parsed.ID.Data()
+	if got != (testUserID{OrgID: 42, UserSeq: 1001}) {
+		t.Errorf("Data() after JSON round-trip = %+v", got)
+	}
+}
+
+func TestJSONZeroValue(t *testing.T) {
+	type wrapper struct {
+		ID ID[testUserID] `json:"id"`
+	}
+
+	original := wrapper{} // zero ID
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if string(data) != `{"id":""}` {
+		t.Errorf("json.Marshal(zero) = %s, want %s", data, `{"id":""}`)
+	}
+
+	var parsed wrapper
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if !parsed.ID.IsZero() {
+		t.Error("JSON round-trip of zero ID should produce zero ID")
+	}
 }

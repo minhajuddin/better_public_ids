@@ -20,10 +20,8 @@ type PostID struct {
 func (PostID) Prefix() string { return "post" }
 
 func init() {
-	bpid.DefaultRegistry = bpid.MustNewRegistry(
-		bpid.WithType[UserID](),
-		bpid.WithType[PostID](),
-	)
+	bpid.RegisterType[UserID]()
+	bpid.RegisterType[PostID]()
 }
 
 func ExampleNew() {

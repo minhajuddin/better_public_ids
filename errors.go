@@ -34,4 +34,7 @@ var (
 
 	// ErrDecodingFailed is returned when gob decoding of the data fails.
 	ErrDecodingFailed = errors.New("bpid: failed to decode data")
+
+	// ErrInvalidSeparator is returned when an invalid separator is provided.
+	ErrInvalidSeparator = errors.New("bpid: invalid separator: must be '.' or '~'")
 )
