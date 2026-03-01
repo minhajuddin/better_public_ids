@@ -4,15 +4,15 @@ import (
 	"testing"
 )
 
-type fuzzUserDef struct {
+type fuzzUserID struct {
 	A int64
 	B string
 }
 
-func (fuzzUserDef) Prefix() string { return "fuzzuser" }
+func (fuzzUserID) Prefix() string { return "fuzzuser" }
 
 func FuzzParse(f *testing.F) {
-	id := MustNew(fuzzUserDef{A: 1, B: "hello"})
+	id := MustNew(fuzzUserID{A: 1, B: "hello"})
 	f.Add(id.String())
 	f.Add("")
 	f.Add("fuzzuser.")
@@ -24,7 +24,7 @@ func FuzzParse(f *testing.F) {
 	f.Add("\x00\x01\x02")
 
 	f.Fuzz(func(t *testing.T, s string) {
-		id, err := Parse[fuzzUserDef](s)
+		id, err := Parse[fuzzUserID](s)
 		if err != nil {
 			return
 		}
@@ -33,7 +33,7 @@ func FuzzParse(f *testing.F) {
 			return
 		}
 		str := id.String()
-		id2, err := Parse[fuzzUserDef](str)
+		id2, err := Parse[fuzzUserID](str)
 		if err != nil {
 			t.Fatalf("round-trip failed: Parse(%q) succeeded, but Parse(%q) failed: %v", s, str, err)
 		}

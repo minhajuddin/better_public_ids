@@ -23,8 +23,8 @@ func WithSeparator(sep string) RegistryOption {
 	}
 }
 
-// WithType registers a [Definer] type's prefix in the registry.
-func WithType[T Definer]() RegistryOption {
+// WithType registers a [PublicID] type's prefix in the registry.
+func WithType[T PublicID]() RegistryOption {
 	var zero T
 	prefix := zero.Prefix()
 	return func(r *Registry) error {

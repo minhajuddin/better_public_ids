@@ -10,32 +10,32 @@ import (
 	"testing"
 )
 
-// Test Definer types (data-carrying structs)
-type userIDDef struct {
+// Test PublicID types (data-carrying structs)
+type testUserID struct {
 	OrgID   int64
 	UserSeq int64
 }
 
-func (userIDDef) Prefix() string { return "user" }
+func (testUserID) Prefix() string { return "user" }
 
-type postIDDef struct {
+type testPostID struct {
 	BoardID int64
 	PostSeq int64
 }
 
-func (postIDDef) Prefix() string { return "post" }
+func (testPostID) Prefix() string { return "post" }
 
 // Compile-time interface compliance checks
 var (
-	_ fmt.Stringer   = ID[userIDDef]{}
-	_ gob.GobEncoder = ID[userIDDef]{}
-	_ gob.GobDecoder = (*ID[userIDDef])(nil)
+	_ fmt.Stringer   = ID[testUserID]{}
+	_ gob.GobEncoder = ID[testUserID]{}
+	_ gob.GobDecoder = (*ID[testUserID])(nil)
 )
 
 // --- Constructor Tests ---
 
 func TestNew(t *testing.T) {
-	data := userIDDef{OrgID: 42, UserSeq: 1001}
+	data := testUserID{OrgID: 42, UserSeq: 1001}
 	id, err := New(data)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -61,8 +61,8 @@ func TestNew(t *testing.T) {
 }
 
 func TestNewDifferentData(t *testing.T) {
-	id1, _ := New(userIDDef{OrgID: 1, UserSeq: 1})
-	id2, _ := New(userIDDef{OrgID: 1, UserSeq: 2})
+	id1, _ := New(testUserID{OrgID: 1, UserSeq: 1})
+	id2, _ := New(testUserID{OrgID: 1, UserSeq: 2})
 
 	if id1.Equal(id2) {
 		t.Error("IDs with different data should not be equal")
@@ -70,7 +70,7 @@ func TestNewDifferentData(t *testing.T) {
 }
 
 func TestNewSameData(t *testing.T) {
-	data := userIDDef{OrgID: 42, UserSeq: 1001}
+	data := testUserID{OrgID: 42, UserSeq: 1001}
 	id1, _ := New(data)
 	id2, _ := New(data)
 
@@ -80,7 +80,7 @@ func TestNewSameData(t *testing.T) {
 }
 
 func TestMustNew(t *testing.T) {
-	data := userIDDef{OrgID: 42, UserSeq: 1001}
+	data := testUserID{OrgID: 42, UserSeq: 1001}
 	id := MustNew(data)
 	if id.IsZero() {
 		t.Error("MustNew returned zero ID")
@@ -92,7 +92,7 @@ func TestMustNew(t *testing.T) {
 }
 
 func TestParse(t *testing.T) {
-	data := userIDDef{OrgID: 42, UserSeq: 1001}
+	data := testUserID{OrgID: 42, UserSeq: 1001}
 	validID, _ := New(data)
 	validStr := validID.String()
 
@@ -112,7 +112,7 @@ func TestParse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			id, err := Parse[userIDDef](tt.input)
+			id, err := Parse[testUserID](tt.input)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatalf("Parse(%q) = nil error, want %v", tt.input, tt.wantErr)
@@ -137,11 +137,11 @@ func TestParse(t *testing.T) {
 }
 
 func TestParseRoundTrip(t *testing.T) {
-	data := userIDDef{OrgID: 42, UserSeq: 1001}
+	data := testUserID{OrgID: 42, UserSeq: 1001}
 	id, _ := New(data)
 	s := id.String()
 
-	parsed, err := Parse[userIDDef](s)
+	parsed, err := Parse[testUserID](s)
 	if err != nil {
 		t.Fatalf("Parse(%q) error: %v", s, err)
 	}
@@ -155,10 +155,10 @@ func TestParseRoundTrip(t *testing.T) {
 }
 
 func TestMustParse(t *testing.T) {
-	id, _ := New(userIDDef{OrgID: 42, UserSeq: 1001})
+	id, _ := New(testUserID{OrgID: 42, UserSeq: 1001})
 	s := id.String()
 
-	parsed := MustParse[userIDDef](s)
+	parsed := MustParse[testUserID](s)
 	if !id.Equal(parsed) {
 		t.Error("MustParse round-trip failed")
 	}
@@ -170,13 +170,13 @@ func TestMustParsePanics(t *testing.T) {
 			t.Error("MustParse with invalid input should panic")
 		}
 	}()
-	MustParse[userIDDef]("invalid")
+	MustParse[testUserID]("invalid")
 }
 
 // --- Method Tests ---
 
 func TestString(t *testing.T) {
-	id, _ := New(userIDDef{OrgID: 42, UserSeq: 1001})
+	id, _ := New(testUserID{OrgID: 42, UserSeq: 1001})
 	s := id.String()
 
 	if !strings.HasPrefix(s, "user.") {
@@ -188,14 +188,14 @@ func TestString(t *testing.T) {
 }
 
 func TestStringZero(t *testing.T) {
-	var id ID[userIDDef]
+	var id ID[testUserID]
 	if got := id.String(); got != "" {
 		t.Errorf("zero ID String() = %q, want %q", got, "")
 	}
 }
 
 func TestStringDeterministic(t *testing.T) {
-	id, _ := New(userIDDef{OrgID: 42, UserSeq: 1001})
+	id, _ := New(testUserID{OrgID: 42, UserSeq: 1001})
 	s1 := id.String()
 	s2 := id.String()
 	if s1 != s2 {
@@ -212,7 +212,7 @@ func TestStringDeterministic(t *testing.T) {
 }
 
 func TestData(t *testing.T) {
-	data := userIDDef{OrgID: 42, UserSeq: 1001}
+	data := testUserID{OrgID: 42, UserSeq: 1001}
 	id, _ := New(data)
 
 	got, err := id.Data()
@@ -225,12 +225,12 @@ func TestData(t *testing.T) {
 }
 
 func TestDataZero(t *testing.T) {
-	var id ID[userIDDef]
+	var id ID[testUserID]
 	got, err := id.Data()
 	if err != nil {
 		t.Fatalf("Data on zero ID: %v", err)
 	}
-	if got != (userIDDef{}) {
+	if got != (testUserID{}) {
 		t.Errorf("zero ID Data() = %+v, want zero value", got)
 	}
 }
@@ -238,12 +238,12 @@ func TestDataZero(t *testing.T) {
 func TestIsZero(t *testing.T) {
 	tests := []struct {
 		name string
-		id   ID[userIDDef]
+		id   ID[testUserID]
 		want bool
 	}{
-		{name: "zero value", id: ID[userIDDef]{}, want: true},
-		{name: "new ID", id: MustNew(userIDDef{OrgID: 1, UserSeq: 1}), want: false},
-		{name: "new with zero data", id: MustNew(userIDDef{}), want: false},
+		{name: "zero value", id: ID[testUserID]{}, want: true},
+		{name: "new ID", id: MustNew(testUserID{OrgID: 1, UserSeq: 1}), want: false},
+		{name: "new with zero data", id: MustNew(testUserID{}), want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -255,10 +255,10 @@ func TestIsZero(t *testing.T) {
 }
 
 func TestEqual(t *testing.T) {
-	data := userIDDef{OrgID: 42, UserSeq: 1001}
+	data := testUserID{OrgID: 42, UserSeq: 1001}
 	id1, _ := New(data)
 	id2, _ := New(data)
-	id3, _ := New(userIDDef{OrgID: 99, UserSeq: 2002})
+	id3, _ := New(testUserID{OrgID: 99, UserSeq: 2002})
 
 	if !id1.Equal(id2) {
 		t.Error("same data IDs should be equal")
@@ -267,24 +267,24 @@ func TestEqual(t *testing.T) {
 		t.Error("different data IDs should not be equal")
 	}
 
-	var z1, z2 ID[userIDDef]
+	var z1, z2 ID[testUserID]
 	if !z1.Equal(z2) {
 		t.Error("two zero IDs should be equal")
 	}
 }
 
 func TestPrefix(t *testing.T) {
-	id := MustNew(userIDDef{OrgID: 1, UserSeq: 1})
+	id := MustNew(testUserID{OrgID: 1, UserSeq: 1})
 	if id.Prefix() != "user" {
 		t.Errorf("Prefix() = %q, want %q", id.Prefix(), "user")
 	}
 
-	pid := MustNew(postIDDef{BoardID: 1, PostSeq: 1})
+	pid := MustNew(testPostID{BoardID: 1, PostSeq: 1})
 	if pid.Prefix() != "post" {
 		t.Errorf("Prefix() = %q, want %q", pid.Prefix(), "post")
 	}
 
-	var zero ID[userIDDef]
+	var zero ID[testUserID]
 	if zero.Prefix() != "user" {
 		t.Errorf("zero Prefix() = %q, want %q", zero.Prefix(), "user")
 	}
@@ -293,14 +293,14 @@ func TestPrefix(t *testing.T) {
 // --- Gob Encode/Decode Tests ---
 
 func TestGobEncodeRoundTrip(t *testing.T) {
-	id := MustNew(userIDDef{OrgID: 42, UserSeq: 1001})
+	id := MustNew(testUserID{OrgID: 42, UserSeq: 1001})
 
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(&id); err != nil {
 		t.Fatalf("gob.Encode: %v", err)
 	}
 
-	var parsed ID[userIDDef]
+	var parsed ID[testUserID]
 	if err := gob.NewDecoder(&buf).Decode(&parsed); err != nil {
 		t.Fatalf("gob.Decode: %v", err)
 	}
@@ -309,13 +309,13 @@ func TestGobEncodeRoundTrip(t *testing.T) {
 		t.Error("gob round-trip failed")
 	}
 	got, _ := parsed.Data()
-	if got != (userIDDef{OrgID: 42, UserSeq: 1001}) {
+	if got != (testUserID{OrgID: 42, UserSeq: 1001}) {
 		t.Errorf("Data() after gob round-trip = %+v, want {42 1001}", got)
 	}
 }
 
 func TestGobEncodeZero(t *testing.T) {
-	var id ID[userIDDef]
+	var id ID[testUserID]
 
 	data, err := id.GobEncode()
 	if err != nil {
@@ -325,7 +325,7 @@ func TestGobEncodeZero(t *testing.T) {
 		t.Errorf("zero ID GobEncode returned %d bytes, want 0", len(data))
 	}
 
-	var parsed ID[userIDDef]
+	var parsed ID[testUserID]
 	if err := parsed.GobDecode(data); err != nil {
 		t.Fatalf("GobDecode: %v", err)
 	}
@@ -346,7 +346,7 @@ func TestGobDecodeInvalidBytes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var id ID[userIDDef]
+			var id ID[testUserID]
 			err := id.GobDecode(tt.data)
 			if err == nil {
 				t.Error("GobDecode should error on invalid gob bytes")
@@ -361,12 +361,12 @@ func TestGobDecodeInvalidBytes(t *testing.T) {
 // --- Cross-Type Safety Tests ---
 
 func TestParseWrongType(t *testing.T) {
-	postID := MustNew(postIDDef{BoardID: 1, PostSeq: 1})
+	postID := MustNew(testPostID{BoardID: 1, PostSeq: 1})
 	postStr := postID.String()
 
-	_, err := Parse[userIDDef](postStr)
+	_, err := Parse[testUserID](postStr)
 	if err == nil {
-		t.Fatal("Parse[userIDDef] with postID string should error")
+		t.Fatal("Parse[testUserID] with postID string should error")
 	}
 	if !errors.Is(err, ErrPrefixMismatch) {
 		t.Errorf("error = %v, want ErrPrefixMismatch", err)
@@ -374,8 +374,8 @@ func TestParseWrongType(t *testing.T) {
 }
 
 func TestMultipleTypes(t *testing.T) {
-	userID := MustNew(userIDDef{OrgID: 1, UserSeq: 1})
-	postID := MustNew(postIDDef{BoardID: 1, PostSeq: 1})
+	userID := MustNew(testUserID{OrgID: 1, UserSeq: 1})
+	postID := MustNew(testPostID{BoardID: 1, PostSeq: 1})
 
 	if userID.Prefix() == postID.Prefix() {
 		t.Error("different types should have different prefixes")
@@ -391,20 +391,20 @@ func TestMultipleTypes(t *testing.T) {
 
 // --- Registration Tests ---
 
-type autoRegTestDef struct {
+type testAutoRegID struct {
 	Val int64
 }
 
-func (autoRegTestDef) Prefix() string { return "autoreg" }
+func (testAutoRegID) Prefix() string { return "autoreg" }
 
-type unregisteredDef struct {
+type testUnregID struct {
 	X int64
 }
 
-func (unregisteredDef) Prefix() string { return "unreg" }
+func (testUnregID) Prefix() string { return "unreg" }
 
 func TestNewUnregistered(t *testing.T) {
-	_, err := New(unregisteredDef{X: 1})
+	_, err := New(testUnregID{X: 1})
 	if err == nil {
 		t.Fatal("New with unregistered type should error")
 	}
@@ -414,7 +414,7 @@ func TestNewUnregistered(t *testing.T) {
 }
 
 func TestParseUnregistered(t *testing.T) {
-	_, err := Parse[unregisteredDef]("unreg.AAAAAAAAAA")
+	_, err := Parse[testUnregID]("unreg.AAAAAAAAAA")
 	if err == nil {
 		t.Fatal("Parse with unregistered type should error")
 	}
@@ -426,7 +426,7 @@ func TestParseUnregistered(t *testing.T) {
 // --- Zero Value Tests ---
 
 func TestZeroValueBehavior(t *testing.T) {
-	var id ID[userIDDef]
+	var id ID[testUserID]
 
 	if !id.IsZero() {
 		t.Error("zero value IsZero() should be true")
@@ -442,11 +442,11 @@ func TestZeroValueBehavior(t *testing.T) {
 	if err != nil {
 		t.Fatalf("zero value Data() error: %v", err)
 	}
-	if data != (userIDDef{}) {
+	if data != (testUserID{}) {
 		t.Errorf("zero value Data() = %+v, want zero", data)
 	}
 
-	var other ID[userIDDef]
+	var other ID[testUserID]
 	if !id.Equal(other) {
 		t.Error("two zero values should be equal")
 	}
@@ -456,7 +456,7 @@ func TestZeroValueBehavior(t *testing.T) {
 
 func TestConcurrentNew(t *testing.T) {
 	const n = 100
-	ids := make([]ID[userIDDef], n)
+	ids := make([]ID[testUserID], n)
 	errs := make([]error, n)
 	var wg sync.WaitGroup
 
@@ -464,7 +464,7 @@ func TestConcurrentNew(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			ids[i], errs[i] = New(userIDDef{OrgID: int64(i), UserSeq: int64(i * 10)})
+			ids[i], errs[i] = New(testUserID{OrgID: int64(i), UserSeq: int64(i * 10)})
 		}(i)
 	}
 	wg.Wait()
@@ -487,11 +487,11 @@ func TestConcurrentNew(t *testing.T) {
 }
 
 func TestConcurrentParse(t *testing.T) {
-	id := MustNew(userIDDef{OrgID: 42, UserSeq: 1001})
+	id := MustNew(testUserID{OrgID: 42, UserSeq: 1001})
 	s := id.String()
 
 	const n = 100
-	results := make([]ID[userIDDef], n)
+	results := make([]ID[testUserID], n)
 	errs := make([]error, n)
 	var wg sync.WaitGroup
 
@@ -499,7 +499,7 @@ func TestConcurrentParse(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			results[i], errs[i] = Parse[userIDDef](s)
+			results[i], errs[i] = Parse[testUserID](s)
 		}(i)
 	}
 	wg.Wait()
@@ -523,13 +523,13 @@ func TestConcurrentMixedOperations(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			id, err := New(userIDDef{OrgID: int64(i), UserSeq: int64(i * 10)})
+			id, err := New(testUserID{OrgID: int64(i), UserSeq: int64(i * 10)})
 			if err != nil {
 				t.Errorf("goroutine %d New error: %v", i, err)
 				return
 			}
 			s := id.String()
-			parsed, err := Parse[userIDDef](s)
+			parsed, err := Parse[testUserID](s)
 			if err != nil {
 				t.Errorf("goroutine %d Parse error: %v", i, err)
 				return

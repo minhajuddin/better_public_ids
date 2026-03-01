@@ -6,16 +6,16 @@ import (
 	"strings"
 )
 
-// ID is a type-safe, prefixed identifier parameterized by a [Definer] type.
+// ID is a type-safe, prefixed identifier parameterized by a [PublicID] type.
 // The struct's exported fields are serialized using [encoding/gob].
 // The zero value represents "no ID" and serializes as an empty string.
-type ID[T Definer] struct {
+type ID[T PublicID] struct {
 	raw []byte // gob-encoded bytes of T; nil for zero value
 }
 
 // New creates a new ID by gob-encoding the provided data.
 // The type's prefix must be registered in [DefaultRegistry].
-func New[T Definer](data T) (ID[T], error) {
+func New[T PublicID](data T) (ID[T], error) {
 	var zero T
 	prefix := zero.Prefix()
 	if !DefaultRegistry.IsRegistered(prefix) {
@@ -29,7 +29,7 @@ func New[T Definer](data T) (ID[T], error) {
 }
 
 // MustNew is like [New] but panics on error.
-func MustNew[T Definer](data T) ID[T] {
+func MustNew[T PublicID](data T) ID[T] {
 	id, err := New(data)
 	if err != nil {
 		panic(fmt.Sprintf("bpid.MustNew: %v", err))
@@ -40,7 +40,7 @@ func MustNew[T Definer](data T) ID[T] {
 // Parse parses a prefixed ID string like "user.<base64url(gob(data))>".
 // It validates that the prefix matches type T's prefix and that the encoded
 // bytes are valid gob for type T. The type's prefix must be registered in [DefaultRegistry].
-func Parse[T Definer](s string) (ID[T], error) {
+func Parse[T PublicID](s string) (ID[T], error) {
 	var zero T
 	prefix := zero.Prefix()
 
@@ -76,7 +76,7 @@ func Parse[T Definer](s string) (ID[T], error) {
 }
 
 // MustParse is like [Parse] but panics on error.
-func MustParse[T Definer](s string) ID[T] {
+func MustParse[T PublicID](s string) ID[T] {
 	id, err := Parse[T](s)
 	if err != nil {
 		panic(fmt.Sprintf("bpid.MustParse: %v", err))

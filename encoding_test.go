@@ -7,22 +7,22 @@ import (
 	"testing"
 )
 
-type encTestData struct {
+type testEncID struct {
 	OrgID   int64
 	UserSeq int64
 }
 
-func (encTestData) Prefix() string { return "enctest" }
+func (testEncID) Prefix() string { return "enctest" }
 
 func TestEncodeGobRoundTrip(t *testing.T) {
 	tests := []struct {
 		name string
-		data encTestData
+		data testEncID
 	}{
-		{name: "zero value", data: encTestData{}},
-		{name: "positive values", data: encTestData{OrgID: 42, UserSeq: 1001}},
-		{name: "negative values", data: encTestData{OrgID: -1, UserSeq: -999}},
-		{name: "large values", data: encTestData{OrgID: 1<<62 - 1, UserSeq: 1<<62 - 1}},
+		{name: "zero value", data: testEncID{}},
+		{name: "positive values", data: testEncID{OrgID: 42, UserSeq: 1001}},
+		{name: "negative values", data: testEncID{OrgID: -1, UserSeq: -999}},
+		{name: "large values", data: testEncID{OrgID: 1<<62 - 1, UserSeq: 1<<62 - 1}},
 	}
 
 	for _, tt := range tests {
@@ -35,7 +35,7 @@ func TestEncodeGobRoundTrip(t *testing.T) {
 				t.Fatal("encodeGob returned empty bytes")
 			}
 
-			decoded, err := decodeGob[encTestData](raw)
+			decoded, err := decodeGob[testEncID](raw)
 			if err != nil {
 				t.Fatalf("decodeGob: %v", err)
 			}
@@ -47,7 +47,7 @@ func TestEncodeGobRoundTrip(t *testing.T) {
 }
 
 func TestEncodeGobDeterminism(t *testing.T) {
-	data := encTestData{OrgID: 42, UserSeq: 1001}
+	data := testEncID{OrgID: 42, UserSeq: 1001}
 
 	b1, err := encodeGob(data)
 	if err != nil {
@@ -62,7 +62,7 @@ func TestEncodeGobDeterminism(t *testing.T) {
 	}
 
 	// Different data should produce different bytes
-	b3, err := encodeGob(encTestData{OrgID: 99, UserSeq: 2002})
+	b3, err := encodeGob(testEncID{OrgID: 99, UserSeq: 2002})
 	if err != nil {
 		t.Fatalf("third encodeGob: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestDecodeGobInvalid(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := decodeGob[encTestData](tt.data)
+			_, err := decodeGob[testEncID](tt.data)
 			if err == nil {
 				t.Fatal("expected error for invalid gob bytes")
 			}

@@ -6,28 +6,28 @@ import (
 	bpid "github.com/minhajuddin/better_public_ids"
 )
 
-type UserIDDef struct {
+type UserID struct {
 	OrgID   int64
 	UserSeq int64
 }
 
-func (UserIDDef) Prefix() string { return "user" }
+func (UserID) Prefix() string { return "user" }
 
-type PostIDDef struct {
+type PostID struct {
 	PostNum int64
 }
 
-func (PostIDDef) Prefix() string { return "post" }
+func (PostID) Prefix() string { return "post" }
 
 func init() {
 	bpid.DefaultRegistry = bpid.MustNewRegistry(
-		bpid.WithType[UserIDDef](),
-		bpid.WithType[PostIDDef](),
+		bpid.WithType[UserID](),
+		bpid.WithType[PostID](),
 	)
 }
 
 func ExampleNew() {
-	id, err := bpid.New(UserIDDef{OrgID: 42, UserSeq: 1001})
+	id, err := bpid.New(UserID{OrgID: 42, UserSeq: 1001})
 	if err != nil {
 		panic(err)
 	}
@@ -39,7 +39,7 @@ func ExampleNew() {
 }
 
 func ExampleMustNew() {
-	id := bpid.MustNew(UserIDDef{OrgID: 42, UserSeq: 1001})
+	id := bpid.MustNew(UserID{OrgID: 42, UserSeq: 1001})
 	fmt.Println(id.Prefix())
 	fmt.Println(id.IsZero())
 	// Output:
@@ -48,7 +48,7 @@ func ExampleMustNew() {
 }
 
 func ExampleID_Data() {
-	id := bpid.MustNew(UserIDDef{OrgID: 42, UserSeq: 1001})
+	id := bpid.MustNew(UserID{OrgID: 42, UserSeq: 1001})
 	data, err := id.Data()
 	if err != nil {
 		panic(err)
@@ -61,10 +61,10 @@ func ExampleID_Data() {
 }
 
 func ExampleParse_roundTrip() {
-	id := bpid.MustNew(UserIDDef{OrgID: 42, UserSeq: 1001})
+	id := bpid.MustNew(UserID{OrgID: 42, UserSeq: 1001})
 	s := id.String()
 
-	parsed, err := bpid.Parse[UserIDDef](s)
+	parsed, err := bpid.Parse[UserID](s)
 	if err != nil {
 		panic(err)
 	}
@@ -80,7 +80,7 @@ func ExampleParse_roundTrip() {
 }
 
 func ExampleParseAny() {
-	id := bpid.MustNew(UserIDDef{OrgID: 42, UserSeq: 1001})
+	id := bpid.MustNew(UserID{OrgID: 42, UserSeq: 1001})
 	s := id.String()
 
 	prefix, rawBytes, err := bpid.ParseAny(s)
@@ -95,7 +95,7 @@ func ExampleParseAny() {
 }
 
 func ExampleID_IsZero() {
-	var id bpid.ID[UserIDDef]
+	var id bpid.ID[UserID]
 	fmt.Println(id.IsZero())
 	fmt.Println(id.String())
 	// Output:
@@ -105,7 +105,7 @@ func ExampleID_IsZero() {
 
 func ExampleNewRegistry() {
 	reg := bpid.MustNewRegistry(
-		bpid.WithType[UserIDDef](),
+		bpid.WithType[UserID](),
 		bpid.WithSeparator("~"),
 	)
 

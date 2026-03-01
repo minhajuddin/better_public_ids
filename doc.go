@@ -1,6 +1,6 @@
 // Package bpid provides type-safe, prefixed public identifiers using Go generics.
 //
-// Each ID type is defined by creating a struct that implements the [Definer]
+// Each ID type is defined by creating a struct that implements the [PublicID]
 // interface. The struct's exported fields ARE the ID's data, serialized using
 // [encoding/gob] and encoded as base64url without padding.
 //

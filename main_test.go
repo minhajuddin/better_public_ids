@@ -7,13 +7,13 @@ import (
 
 func TestMain(m *testing.M) {
 	DefaultRegistry = MustNewRegistry(
-		WithType[userIDDef](),
-		WithType[postIDDef](),
-		WithType[autoRegTestDef](),
-		WithType[fuzzUserDef](),
-		WithType[benchUserDef](),
-		WithType[encTestData](),
-		WithType[registryTestData](),
+		WithType[testUserID](),
+		WithType[testPostID](),
+		WithType[testAutoRegID](),
+		WithType[fuzzUserID](),
+		WithType[benchUserID](),
+		WithType[testEncID](),
+		WithType[testRegID](),
 	)
 	os.Exit(m.Run())
 }

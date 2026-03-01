@@ -8,15 +8,15 @@ import (
 	"testing"
 )
 
-type registryTestData struct {
+type testRegID struct {
 	Val int64
 }
 
-func (registryTestData) Prefix() string { return "regtest" }
+func (testRegID) Prefix() string { return "regtest" }
 
 // makeTestEncodedString creates a valid encoded ID string for registry tests.
 func makeTestEncodedString(prefix string) (string, []byte) {
-	data := registryTestData{Val: 42}
+	data := testRegID{Val: 42}
 	raw, _ := encodeGob(data)
 	return prefix + "." + encodeBytes(raw), raw
 }
@@ -78,7 +78,7 @@ func TestMustNewRegistryPanics(t *testing.T) {
 }
 
 func TestWithType(t *testing.T) {
-	r, err := NewRegistry(WithType[registryTestData]())
+	r, err := NewRegistry(WithType[testRegID]())
 	if err != nil {
 		t.Fatalf("NewRegistry: %v", err)
 	}
@@ -89,8 +89,8 @@ func TestWithType(t *testing.T) {
 
 func TestWithTypeDuplicate(t *testing.T) {
 	_, err := NewRegistry(
-		WithType[registryTestData](),
-		WithType[registryTestData](),
+		WithType[testRegID](),
+		WithType[testRegID](),
 	)
 	if err == nil {
 		t.Fatal("duplicate WithType should error")
@@ -101,7 +101,7 @@ func TestWithTypeDuplicate(t *testing.T) {
 }
 
 func TestIsRegistered(t *testing.T) {
-	r := MustNewRegistry(WithType[registryTestData]())
+	r := MustNewRegistry(WithType[testRegID]())
 	if !r.IsRegistered("regtest") {
 		t.Error("regtest should be registered")
 	}
@@ -243,7 +243,7 @@ func TestRegistryParseAny(t *testing.T) {
 }
 
 func TestRegistryParseAnyWithCustomSeparator(t *testing.T) {
-	data := registryTestData{Val: 42}
+	data := testRegID{Val: 42}
 	raw, _ := encodeGob(data)
 	encoded := encodeBytes(raw)
 
@@ -299,7 +299,7 @@ func TestRegistryConcurrency(t *testing.T) {
 	}
 
 	// Now parse concurrently
-	data := registryTestData{Val: 42}
+	data := testRegID{Val: 42}
 	raw, _ := encodeGob(data)
 	encoded := encodeBytes(raw)
 
@@ -343,7 +343,7 @@ func TestDefaultRegistryDelegation(t *testing.T) {
 		t.Fatalf("Register: %v", err)
 	}
 
-	data := registryTestData{Val: 42}
+	data := testRegID{Val: 42}
 	raw, _ := encodeGob(data)
 	encoded := encodeBytes(raw)
 

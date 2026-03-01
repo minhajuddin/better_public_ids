@@ -5,14 +5,14 @@ import (
 	"regexp"
 )
 
-// Definer is the interface that ID definition types must implement.
+// PublicID is the interface that ID definition types must implement.
 // It provides the string prefix for the ID type.
 //
-// Implementations should be small, typically empty structs:
+// Implementations are structs whose exported fields carry the ID's data:
 //
-//	type UserIDDef struct{}
-//	func (UserIDDef) Prefix() string { return "user" }
-type Definer interface {
+//	type UserID struct{ OrgID, UserSeq int64 }
+//	func (UserID) Prefix() string { return "user" }
+type PublicID interface {
 	Prefix() string
 }
 
