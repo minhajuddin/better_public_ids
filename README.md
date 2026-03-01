@@ -62,8 +62,6 @@ id.IsZero()  // true
 id.String()  // ""
 ```
 
-JSON marshals as `null`, SQL stores as `NULL`.
-
 ### Registry — type-agnostic parsing
 
 Prefixes are auto-registered when you create or parse IDs. Use `ParseAny` to extract prefix and raw bytes without knowing the type:
@@ -86,11 +84,7 @@ prefix, raw, err := reg.ParseAny("user~<encoded>")
 Every `ID[T]` implements:
 
 - `fmt.Stringer`
-- `encoding.TextMarshaler` / `TextUnmarshaler`
-- `encoding/json.Marshaler` / `Unmarshaler`
-- `encoding.BinaryMarshaler` / `BinaryUnmarshaler`
-- `database/sql/driver.Valuer`
-- `database/sql.Scanner`
+- `encoding/gob.GobEncoder` / `GobDecoder`
 
 ## Development
 

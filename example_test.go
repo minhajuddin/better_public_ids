@@ -1,7 +1,6 @@
 package bpid_test
 
 import (
-	"encoding/json"
 	"fmt"
 
 	bpid "github.com/minhajuddin/better_public_ids"
@@ -99,49 +98,6 @@ func ExampleID_IsZero() {
 	// Output:
 	// true
 	//
-}
-
-func ExampleID_MarshalJSON() {
-	type User struct {
-		ID   bpid.ID[UserIDDef] `json:"id"`
-		Name string             `json:"name"`
-	}
-
-	id := bpid.MustNew(UserIDDef{OrgID: 42, UserSeq: 1001})
-	user := User{
-		ID:   id,
-		Name: "Alice",
-	}
-	data, err := json.Marshal(user)
-	if err != nil {
-		panic(err)
-	}
-
-	// Verify it round-trips
-	var user2 User
-	if err := json.Unmarshal(data, &user2); err != nil {
-		panic(err)
-	}
-	fmt.Println(user.ID.Equal(user2.ID))
-	fmt.Println(user2.Name)
-	// Output:
-	// true
-	// Alice
-}
-
-func ExampleID_MarshalJSON_zero() {
-	type User struct {
-		ID   bpid.ID[UserIDDef] `json:"id"`
-		Name string             `json:"name"`
-	}
-	user := User{Name: "Bob"}
-	data, err := json.Marshal(user)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(string(data))
-	// Output:
-	// {"id":null,"name":"Bob"}
 }
 
 func ExampleNewRegistry() {

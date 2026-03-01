@@ -1,4 +1,4 @@
-.PHONY: build test test-race test-v vet fuzz fuzz-parse fuzz-text fuzz-json bench clean all
+.PHONY: build test test-race test-v vet fuzz bench clean all
 
 all: vet build test
 
@@ -19,16 +19,8 @@ vet:
 
 FUZZTIME ?= 10s
 
-fuzz: fuzz-parse fuzz-text fuzz-json
-
-fuzz-parse:
+fuzz:
 	go test ./... -fuzz=FuzzParse -fuzztime=$(FUZZTIME)
-
-fuzz-text:
-	go test ./... -fuzz=FuzzUnmarshalText -fuzztime=$(FUZZTIME)
-
-fuzz-json:
-	go test ./... -fuzz=FuzzUnmarshalJSON -fuzztime=$(FUZZTIME)
 
 bench:
 	go test ./... -bench=. -benchmem

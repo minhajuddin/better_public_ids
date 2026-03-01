@@ -2,8 +2,6 @@ package bpid
 
 import (
 	"bytes"
-	"database/sql/driver"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -130,62 +128,9 @@ func (id ID[T]) Prefix() string {
 	return zero.Prefix()
 }
 
-// MarshalText implements [encoding.TextMarshaler].
-// The zero value marshals to an empty byte slice.
-func (id ID[T]) MarshalText() ([]byte, error) {
-	return []byte(id.String()), nil
-}
-
-// UnmarshalText implements [encoding.TextUnmarshaler].
-// An empty input sets the ID to the zero value.
-func (id *ID[T]) UnmarshalText(data []byte) error {
-	if len(data) == 0 {
-		*id = ID[T]{}
-		return nil
-	}
-	parsed, err := Parse[T](string(data))
-	if err != nil {
-		return err
-	}
-	*id = parsed
-	return nil
-}
-
-// MarshalJSON implements [encoding/json.Marshaler].
-// The zero value marshals as JSON null.
-func (id ID[T]) MarshalJSON() ([]byte, error) {
-	if id.IsZero() {
-		return []byte("null"), nil
-	}
-	return json.Marshal(id.String())
-}
-
-// UnmarshalJSON implements [encoding/json.Unmarshaler].
-// JSON null or empty string sets the ID to the zero value.
-func (id *ID[T]) UnmarshalJSON(data []byte) error {
-	if string(data) == "null" {
-		*id = ID[T]{}
-		return nil
-	}
-	var s string
-	if err := json.Unmarshal(data, &s); err != nil {
-		return fmt.Errorf("bpid: invalid JSON: %w", err)
-	}
-	if s == "" {
-		*id = ID[T]{}
-		return nil
-	}
-	parsed, err := Parse[T](s)
-	if err != nil {
-		return err
-	}
-	*id = parsed
-	return nil
-}
-
-// MarshalBinary implements [encoding.BinaryMarshaler].
-// Returns the raw gob-encoded bytes. The zero value returns nil.
-func (id ID[T]) MarshalBinary() ([]byte, error) {
+// GobEncode implements [encoding/gob.GobEncoder].
+// Returns a copy of the raw gob-encoded bytes. The zero value returns nil.
+func (id ID[T]) GobEncode() ([]byte, error) {
 	if id.IsZero() {
 		return nil, nil
 	}
@@ -194,9 +139,9 @@ func (id ID[T]) MarshalBinary() ([]byte, error) {
 	return out, nil
 }
 
-// UnmarshalBinary implements [encoding.BinaryUnmarshaler].
+// GobDecode implements [encoding/gob.GobDecoder].
 // Accepts gob-encoded bytes. Empty input sets the ID to the zero value.
-func (id *ID[T]) UnmarshalBinary(data []byte) error {
+func (id *ID[T]) GobDecode(data []byte) error {
 	if len(data) == 0 {
 		*id = ID[T]{}
 		return nil
@@ -208,49 +153,4 @@ func (id *ID[T]) UnmarshalBinary(data []byte) error {
 	id.raw = make([]byte, len(data))
 	copy(id.raw, data)
 	return nil
-}
-
-// Value implements [database/sql/driver.Valuer].
-// Stores the prefixed string representation in the database.
-// The zero value returns nil (SQL NULL).
-func (id ID[T]) Value() (driver.Value, error) {
-	if id.IsZero() {
-		return nil, nil
-	}
-	return id.String(), nil
-}
-
-// Scan implements [database/sql.Scanner].
-// Accepts string, []byte, or nil.
-func (id *ID[T]) Scan(src any) error {
-	if src == nil {
-		*id = ID[T]{}
-		return nil
-	}
-	switch v := src.(type) {
-	case string:
-		if v == "" {
-			*id = ID[T]{}
-			return nil
-		}
-		parsed, err := Parse[T](v)
-		if err != nil {
-			return err
-		}
-		*id = parsed
-		return nil
-	case []byte:
-		if len(v) == 0 {
-			*id = ID[T]{}
-			return nil
-		}
-		parsed, err := Parse[T](string(v))
-		if err != nil {
-			return err
-		}
-		*id = parsed
-		return nil
-	default:
-		return fmt.Errorf("%w: got %T", ErrScanType, src)
-	}
 }

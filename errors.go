@@ -29,10 +29,6 @@ var (
 	// registered.
 	ErrDuplicatePrefix = errors.New("bpid: duplicate prefix")
 
-	// ErrScanType is returned by Scan when the source value is not a supported
-	// type (string or []byte).
-	ErrScanType = errors.New("bpid: unsupported scan source type")
-
 	// ErrEncodingFailed is returned when gob encoding of the data fails.
 	ErrEncodingFailed = errors.New("bpid: failed to encode data")
 

@@ -1,10 +1,8 @@
 package bpid
 
 import (
-	"database/sql"
-	"database/sql/driver"
-	"encoding"
-	"encoding/json"
+	"bytes"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"strings"
@@ -29,15 +27,9 @@ func (postIDDef) Prefix() string { return "post" }
 
 // Compile-time interface compliance checks
 var (
-	_ fmt.Stringer               = ID[userIDDef]{}
-	_ encoding.TextMarshaler     = ID[userIDDef]{}
-	_ encoding.TextUnmarshaler   = (*ID[userIDDef])(nil)
-	_ json.Marshaler             = ID[userIDDef]{}
-	_ json.Unmarshaler           = (*ID[userIDDef])(nil)
-	_ encoding.BinaryMarshaler   = ID[userIDDef]{}
-	_ encoding.BinaryUnmarshaler = (*ID[userIDDef])(nil)
-	_ driver.Valuer              = ID[userIDDef]{}
-	_ sql.Scanner                = (*ID[userIDDef])(nil)
+	_ fmt.Stringer   = ID[userIDDef]{}
+	_ gob.GobEncoder = ID[userIDDef]{}
+	_ gob.GobDecoder = (*ID[userIDDef])(nil)
 )
 
 // --- Constructor Tests ---
@@ -298,252 +290,51 @@ func TestPrefix(t *testing.T) {
 	}
 }
 
-// --- Text Marshaling Tests ---
+// --- Gob Encode/Decode Tests ---
 
-func TestTextMarshalRoundTrip(t *testing.T) {
+func TestGobEncodeRoundTrip(t *testing.T) {
 	id := MustNew(userIDDef{OrgID: 42, UserSeq: 1001})
 
-	data, err := id.MarshalText()
-	if err != nil {
-		t.Fatalf("MarshalText: %v", err)
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(&id); err != nil {
+		t.Fatalf("gob.Encode: %v", err)
 	}
 
 	var parsed ID[userIDDef]
-	if err := parsed.UnmarshalText(data); err != nil {
-		t.Fatalf("UnmarshalText: %v", err)
+	if err := gob.NewDecoder(&buf).Decode(&parsed); err != nil {
+		t.Fatalf("gob.Decode: %v", err)
 	}
 
 	if !id.Equal(parsed) {
-		t.Error("text marshal round-trip failed")
+		t.Error("gob round-trip failed")
+	}
+	got, _ := parsed.Data()
+	if got != (userIDDef{OrgID: 42, UserSeq: 1001}) {
+		t.Errorf("Data() after gob round-trip = %+v, want {42 1001}", got)
 	}
 }
 
-func TestTextMarshalZero(t *testing.T) {
+func TestGobEncodeZero(t *testing.T) {
 	var id ID[userIDDef]
 
-	data, err := id.MarshalText()
+	data, err := id.GobEncode()
 	if err != nil {
-		t.Fatalf("MarshalText: %v", err)
+		t.Fatalf("GobEncode: %v", err)
 	}
 	if len(data) != 0 {
-		t.Errorf("zero ID MarshalText = %q, want empty", string(data))
+		t.Errorf("zero ID GobEncode returned %d bytes, want 0", len(data))
 	}
 
 	var parsed ID[userIDDef]
-	if err := parsed.UnmarshalText(data); err != nil {
-		t.Fatalf("UnmarshalText: %v", err)
+	if err := parsed.GobDecode(data); err != nil {
+		t.Fatalf("GobDecode: %v", err)
 	}
 	if !parsed.IsZero() {
-		t.Error("UnmarshalText(empty) should produce zero ID")
+		t.Error("GobDecode(nil) should produce zero ID")
 	}
 }
 
-// --- JSON Marshaling Tests ---
-
-func TestJSONMarshalRoundTrip(t *testing.T) {
-	id := MustNew(userIDDef{OrgID: 42, UserSeq: 1001})
-
-	data, err := id.MarshalJSON()
-	if err != nil {
-		t.Fatalf("MarshalJSON: %v", err)
-	}
-
-	var parsed ID[userIDDef]
-	if err := parsed.UnmarshalJSON(data); err != nil {
-		t.Fatalf("UnmarshalJSON: %v", err)
-	}
-
-	if !id.Equal(parsed) {
-		t.Error("JSON marshal round-trip failed")
-	}
-}
-
-func TestJSONMarshalZero(t *testing.T) {
-	var id ID[userIDDef]
-
-	data, err := id.MarshalJSON()
-	if err != nil {
-		t.Fatalf("MarshalJSON: %v", err)
-	}
-	if string(data) != "null" {
-		t.Errorf("zero ID MarshalJSON = %q, want %q", string(data), "null")
-	}
-
-	var parsed ID[userIDDef]
-	if err := parsed.UnmarshalJSON(data); err != nil {
-		t.Fatalf("UnmarshalJSON(null): %v", err)
-	}
-	if !parsed.IsZero() {
-		t.Error("UnmarshalJSON(null) should produce zero ID")
-	}
-}
-
-func TestJSONUnmarshalEmptyString(t *testing.T) {
-	var id ID[userIDDef]
-	if err := id.UnmarshalJSON([]byte(`""`)); err != nil {
-		t.Fatalf("UnmarshalJSON empty string: %v", err)
-	}
-	if !id.IsZero() {
-		t.Error("UnmarshalJSON(\"\") should produce zero ID")
-	}
-}
-
-func TestJSONUnmarshalInvalidJSON(t *testing.T) {
-	var id ID[userIDDef]
-	err := id.UnmarshalJSON([]byte(`{}`))
-	if err == nil {
-		t.Fatal("UnmarshalJSON({}) should error")
-	}
-}
-
-func TestJSONUnmarshalInvalidID(t *testing.T) {
-	postID := MustNew(postIDDef{BoardID: 1, PostSeq: 1})
-	data, _ := json.Marshal(postID.String())
-
-	var id ID[userIDDef]
-	err := id.UnmarshalJSON(data)
-	if err == nil {
-		t.Fatal("UnmarshalJSON with wrong prefix should error")
-	}
-	if !errors.Is(err, ErrPrefixMismatch) {
-		t.Fatalf("error = %v, want ErrPrefixMismatch", err)
-	}
-}
-
-func TestJSONInStruct(t *testing.T) {
-	type Payload struct {
-		ID   ID[userIDDef] `json:"id"`
-		Name string        `json:"name"`
-	}
-
-	id := MustNew(userIDDef{OrgID: 42, UserSeq: 1001})
-	original := Payload{ID: id, Name: "Alice"}
-
-	data, err := json.Marshal(original)
-	if err != nil {
-		t.Fatalf("json.Marshal: %v", err)
-	}
-
-	var decoded Payload
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("json.Unmarshal: %v", err)
-	}
-
-	if !original.ID.Equal(decoded.ID) {
-		t.Error("JSON struct round-trip ID mismatch")
-	}
-	if original.Name != decoded.Name {
-		t.Error("JSON struct round-trip Name mismatch")
-	}
-}
-
-func TestJSONInStructZeroID(t *testing.T) {
-	type Payload struct {
-		ID   ID[userIDDef] `json:"id"`
-		Name string        `json:"name"`
-	}
-
-	original := Payload{Name: "Bob"}
-
-	data, err := json.Marshal(original)
-	if err != nil {
-		t.Fatalf("json.Marshal: %v", err)
-	}
-
-	if !strings.Contains(string(data), `"id":null`) {
-		t.Errorf("expected null ID in JSON, got %s", string(data))
-	}
-
-	var decoded Payload
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("json.Unmarshal: %v", err)
-	}
-	if !decoded.ID.IsZero() {
-		t.Error("decoded ID should be zero")
-	}
-}
-
-func TestJSONInStructOmitzero(t *testing.T) {
-	type Payload struct {
-		ID   ID[userIDDef] `json:"id,omitzero"`
-		Name string        `json:"name"`
-	}
-
-	original := Payload{Name: "Charlie"}
-
-	data, err := json.Marshal(original)
-	if err != nil {
-		t.Fatalf("json.Marshal: %v", err)
-	}
-
-	if strings.Contains(string(data), `"id"`) {
-		t.Errorf("expected omitted ID in JSON, got %s", string(data))
-	}
-}
-
-func TestJSONNullInPayload(t *testing.T) {
-	type Payload struct {
-		ID   ID[userIDDef] `json:"id"`
-		Name string        `json:"name"`
-	}
-
-	data := []byte(`{"id":null,"name":"Dave"}`)
-	var decoded Payload
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("json.Unmarshal: %v", err)
-	}
-	if !decoded.ID.IsZero() {
-		t.Error("null ID should decode to zero")
-	}
-	if decoded.Name != "Dave" {
-		t.Errorf("Name = %q, want %q", decoded.Name, "Dave")
-	}
-}
-
-// --- Binary Marshaling Tests ---
-
-func TestBinaryMarshalRoundTrip(t *testing.T) {
-	id := MustNew(userIDDef{OrgID: 42, UserSeq: 1001})
-
-	data, err := id.MarshalBinary()
-	if err != nil {
-		t.Fatalf("MarshalBinary: %v", err)
-	}
-	if len(data) == 0 {
-		t.Fatal("MarshalBinary returned empty bytes for non-zero ID")
-	}
-
-	var parsed ID[userIDDef]
-	if err := parsed.UnmarshalBinary(data); err != nil {
-		t.Fatalf("UnmarshalBinary: %v", err)
-	}
-
-	if !id.Equal(parsed) {
-		t.Error("binary marshal round-trip failed")
-	}
-}
-
-func TestBinaryMarshalZero(t *testing.T) {
-	var id ID[userIDDef]
-
-	data, err := id.MarshalBinary()
-	if err != nil {
-		t.Fatalf("MarshalBinary: %v", err)
-	}
-	if len(data) != 0 {
-		t.Errorf("zero ID MarshalBinary returned %d bytes, want 0", len(data))
-	}
-
-	var parsed ID[userIDDef]
-	if err := parsed.UnmarshalBinary(data); err != nil {
-		t.Fatalf("UnmarshalBinary: %v", err)
-	}
-	if !parsed.IsZero() {
-		t.Error("UnmarshalBinary(nil) should produce zero ID")
-	}
-}
-
-func TestBinaryUnmarshalInvalidGob(t *testing.T) {
+func TestGobDecodeInvalidBytes(t *testing.T) {
 	tests := []struct {
 		name string
 		data []byte
@@ -556,131 +347,14 @@ func TestBinaryUnmarshalInvalidGob(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var id ID[userIDDef]
-			err := id.UnmarshalBinary(tt.data)
+			err := id.GobDecode(tt.data)
 			if err == nil {
-				t.Error("UnmarshalBinary should error on invalid gob bytes")
+				t.Error("GobDecode should error on invalid gob bytes")
 			}
 			if !errors.Is(err, ErrDecodingFailed) {
 				t.Errorf("error = %v, want ErrDecodingFailed", err)
 			}
 		})
-	}
-}
-
-// --- SQL Tests ---
-
-func TestSQLValueAndScan(t *testing.T) {
-	id := MustNew(userIDDef{OrgID: 42, UserSeq: 1001})
-
-	val, err := id.Value()
-	if err != nil {
-		t.Fatalf("Value: %v", err)
-	}
-
-	s, ok := val.(string)
-	if !ok {
-		t.Fatalf("Value() type = %T, want string", val)
-	}
-	if s != id.String() {
-		t.Errorf("Value() = %q, want %q", s, id.String())
-	}
-
-	var scanned ID[userIDDef]
-	if err := scanned.Scan(s); err != nil {
-		t.Fatalf("Scan(string): %v", err)
-	}
-	if !id.Equal(scanned) {
-		t.Error("Value/Scan round-trip failed")
-	}
-}
-
-func TestSQLValueZero(t *testing.T) {
-	var id ID[userIDDef]
-	val, err := id.Value()
-	if err != nil {
-		t.Fatalf("Value: %v", err)
-	}
-	if val != nil {
-		t.Errorf("zero ID Value() = %v, want nil", val)
-	}
-}
-
-func TestSQLScanNil(t *testing.T) {
-	id := MustNew(userIDDef{OrgID: 1, UserSeq: 1})
-	if err := id.Scan(nil); err != nil {
-		t.Fatalf("Scan(nil): %v", err)
-	}
-	if !id.IsZero() {
-		t.Error("Scan(nil) should produce zero ID")
-	}
-}
-
-func TestSQLScanString(t *testing.T) {
-	original := MustNew(userIDDef{OrgID: 42, UserSeq: 1001})
-	s := original.String()
-
-	var id ID[userIDDef]
-	if err := id.Scan(s); err != nil {
-		t.Fatalf("Scan(string): %v", err)
-	}
-	if !original.Equal(id) {
-		t.Error("Scan(string) mismatch")
-	}
-}
-
-func TestSQLScanBytes(t *testing.T) {
-	original := MustNew(userIDDef{OrgID: 42, UserSeq: 1001})
-	s := original.String()
-
-	var id ID[userIDDef]
-	if err := id.Scan([]byte(s)); err != nil {
-		t.Fatalf("Scan([]byte): %v", err)
-	}
-	if !original.Equal(id) {
-		t.Error("Scan([]byte) mismatch")
-	}
-}
-
-func TestSQLScanEmptyString(t *testing.T) {
-	var id ID[userIDDef]
-	if err := id.Scan(""); err != nil {
-		t.Fatalf("Scan empty string: %v", err)
-	}
-	if !id.IsZero() {
-		t.Error("Scan(\"\") should produce zero ID")
-	}
-}
-
-func TestSQLScanEmptyBytes(t *testing.T) {
-	var id ID[userIDDef]
-	if err := id.Scan([]byte{}); err != nil {
-		t.Fatalf("Scan empty bytes: %v", err)
-	}
-	if !id.IsZero() {
-		t.Error("Scan([]byte{}) should produce zero ID")
-	}
-}
-
-func TestSQLScanUnsupportedType(t *testing.T) {
-	var id ID[userIDDef]
-	err := id.Scan(123)
-	if err == nil {
-		t.Fatal("Scan(int) should error")
-	}
-	if !errors.Is(err, ErrScanType) {
-		t.Errorf("error = %v, want ErrScanType", err)
-	}
-}
-
-func TestSQLScanInvalidID(t *testing.T) {
-	postID := MustNew(postIDDef{BoardID: 1, PostSeq: 1})
-	var id ID[userIDDef]
-	err := id.Scan(postID.String())
-	if err == nil {
-		t.Fatal("Scan with wrong prefix should error")
-	}
-	if !errors.Is(err, ErrPrefixMismatch) {
-		t.Errorf("error = %v, want ErrPrefixMismatch", err)
 	}
 }
 
@@ -855,19 +529,6 @@ func TestConcurrentMixedOperations(t *testing.T) {
 			}
 			if !id.Equal(parsed) {
 				t.Errorf("goroutine %d Parse mismatch", i)
-			}
-			data, err := id.MarshalJSON()
-			if err != nil {
-				t.Errorf("goroutine %d MarshalJSON error: %v", i, err)
-				return
-			}
-			var unmarshaled ID[userIDDef]
-			if err := unmarshaled.UnmarshalJSON(data); err != nil {
-				t.Errorf("goroutine %d UnmarshalJSON error: %v", i, err)
-				return
-			}
-			if !id.Equal(unmarshaled) {
-				t.Errorf("goroutine %d JSON round-trip mismatch", i)
 			}
 		}(i)
 	}

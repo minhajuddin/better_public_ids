@@ -1,6 +1,8 @@
 package bpid
 
 import (
+	"bytes"
+	"encoding/gob"
 	"testing"
 )
 
@@ -51,57 +53,24 @@ func BenchmarkEqual(b *testing.B) {
 	}
 }
 
-func BenchmarkMarshalJSON(b *testing.B) {
+func BenchmarkGobEncode(b *testing.B) {
 	id := MustNew(benchUserDef{OrgID: 42, UserSeq: 1001})
 	b.ResetTimer()
 	for b.Loop() {
-		_, _ = id.MarshalJSON()
+		var buf bytes.Buffer
+		_ = gob.NewEncoder(&buf).Encode(&id)
 	}
 }
 
-func BenchmarkUnmarshalJSON(b *testing.B) {
+func BenchmarkGobDecode(b *testing.B) {
 	id := MustNew(benchUserDef{OrgID: 42, UserSeq: 1001})
-	data, _ := id.MarshalJSON()
+	var buf bytes.Buffer
+	_ = gob.NewEncoder(&buf).Encode(&id)
+	data := buf.Bytes()
 	b.ResetTimer()
 	for b.Loop() {
 		var parsed ID[benchUserDef]
-		_ = parsed.UnmarshalJSON(data)
-	}
-}
-
-func BenchmarkMarshalText(b *testing.B) {
-	id := MustNew(benchUserDef{OrgID: 42, UserSeq: 1001})
-	b.ResetTimer()
-	for b.Loop() {
-		_, _ = id.MarshalText()
-	}
-}
-
-func BenchmarkUnmarshalText(b *testing.B) {
-	id := MustNew(benchUserDef{OrgID: 42, UserSeq: 1001})
-	data, _ := id.MarshalText()
-	b.ResetTimer()
-	for b.Loop() {
-		var parsed ID[benchUserDef]
-		_ = parsed.UnmarshalText(data)
-	}
-}
-
-func BenchmarkSQLValue(b *testing.B) {
-	id := MustNew(benchUserDef{OrgID: 42, UserSeq: 1001})
-	b.ResetTimer()
-	for b.Loop() {
-		_, _ = id.Value()
-	}
-}
-
-func BenchmarkSQLScan(b *testing.B) {
-	id := MustNew(benchUserDef{OrgID: 42, UserSeq: 1001})
-	s := id.String()
-	b.ResetTimer()
-	for b.Loop() {
-		var parsed ID[benchUserDef]
-		_ = parsed.Scan(s)
+		_ = gob.NewDecoder(bytes.NewReader(data)).Decode(&parsed)
 	}
 }
 

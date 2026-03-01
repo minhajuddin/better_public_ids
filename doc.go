@@ -13,9 +13,7 @@
 //	id, err := bpid.New(UserID{OrgID: 42, UserSeq: 1001})
 //	fmt.Println(id) // "user.<base64url(gob(data))>"
 //
-// IDs implement [fmt.Stringer], [encoding.TextMarshaler], [encoding.TextUnmarshaler],
-// [encoding/json.Marshaler], [encoding/json.Unmarshaler], [encoding.BinaryMarshaler],
-// [encoding.BinaryUnmarshaler], [database/sql.Scanner], and [database/sql/driver.Valuer].
+// IDs implement [fmt.Stringer], [encoding/gob.GobEncoder], and [encoding/gob.GobDecoder].
 //
 // A global [DefaultRegistry] automatically tracks registered prefixes, enabling
 // type-agnostic parsing via [ParseAny]. Custom [Registry] instances can be created
