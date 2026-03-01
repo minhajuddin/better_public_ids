@@ -14,9 +14,9 @@ go get github.com/minhajuddin/better_public_ids
 
 ## Usage
 
-### Define an ID type
+### 1. Define ID types
 
-Create a struct with exported fields and implement `Prefix()`:
+Create structs with exported fields and implement `Prefix()`:
 
 ```go
 type UserID struct {
@@ -25,13 +25,30 @@ type UserID struct {
 }
 
 func (UserID) Prefix() string { return "user" }
+
+type PostID struct {
+    BoardID int64
+    PostSeq int64
+}
+
+func (PostID) Prefix() string { return "post" }
 ```
 
-### Create IDs
+### 2. Register all types in a registry
+
+```go
+func init() {
+    bpid.DefaultRegistry = bpid.MustNewRegistry(
+        bpid.WithType[UserID](),
+        bpid.WithType[PostID](),
+    )
+}
+```
+
+### 3. Create and use IDs
 
 ```go
 id, err := bpid.New(UserID{OrgID: 42, UserSeq: 1001})
-// or panic on error:
 id := bpid.MustNew(UserID{OrgID: 42, UserSeq: 1001})
 ```
 
@@ -52,6 +69,13 @@ parsed, err := bpid.Parse[UserID](s)
 fmt.Println(id.Equal(parsed)) // true
 ```
 
+### Type-agnostic parsing
+
+```go
+prefix, rawBytes, err := bpid.ParseAny(s)
+// prefix = "user", rawBytes = gob-encoded bytes
+```
+
 ### Zero values
 
 The zero value of `ID[T]` represents "no ID":
@@ -62,21 +86,13 @@ id.IsZero()  // true
 id.String()  // ""
 ```
 
-### Registry — type-agnostic parsing
-
-Prefixes are auto-registered when you create or parse IDs. Use `ParseAny` to extract prefix and raw bytes without knowing the type:
+### Custom registries
 
 ```go
-prefix, rawBytes, err := bpid.ParseAny(s)
-// prefix = "user", rawBytes = gob-encoded bytes
-```
-
-Custom registries with different separators:
-
-```go
-reg := bpid.NewRegistry(bpid.WithSeparator("~"))
-reg.Register("user")
-prefix, raw, err := reg.ParseAny("user~<encoded>")
+reg := bpid.MustNewRegistry(
+    bpid.WithType[UserID](),
+    bpid.WithSeparator("~"),
+)
 ```
 
 ## Interfaces
@@ -95,7 +111,7 @@ make test-v   # verbose tests
 make test-race # tests with race detector
 make vet      # go vet ./...
 make bench    # benchmarks with -benchmem
-make fuzz     # all 3 fuzz targets (10s each)
+make fuzz     # fuzz FuzzParse (10s)
 make fuzz FUZZTIME=30s  # override fuzz duration
 make clean    # clear test and fuzz caches
 ```

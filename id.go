@@ -4,36 +4,23 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
-	"sync"
 )
-
-// registrationOnces tracks per-prefix sync.Once instances for lazy registration.
-var registrationOnces sync.Map // map[string]*sync.Once
-
-// ensureRegistered lazily registers the prefix for type T in the [DefaultRegistry].
-// It is safe for concurrent use and runs at most once per distinct prefix.
-func ensureRegistered[T Definer]() string {
-	var zero T
-	prefix := zero.Prefix()
-	once, _ := registrationOnces.LoadOrStore(prefix, &sync.Once{})
-	once.(*sync.Once).Do(func() {
-		// Best-effort registration. If it fails (e.g., duplicate from manual
-		// Register call), that's fine — the prefix is already known.
-		_ = DefaultRegistry.Register(prefix)
-	})
-	return prefix
-}
 
 // ID is a type-safe, prefixed identifier parameterized by a [Definer] type.
 // The struct's exported fields are serialized using [encoding/gob].
-// The zero value represents "no ID" and serializes as an empty string (or JSON null).
+// The zero value represents "no ID" and serializes as an empty string.
 type ID[T Definer] struct {
 	raw []byte // gob-encoded bytes of T; nil for zero value
 }
 
 // New creates a new ID by gob-encoding the provided data.
+// The type's prefix must be registered in [DefaultRegistry].
 func New[T Definer](data T) (ID[T], error) {
-	ensureRegistered[T]()
+	var zero T
+	prefix := zero.Prefix()
+	if !DefaultRegistry.IsRegistered(prefix) {
+		return ID[T]{}, fmt.Errorf("%w: %q", ErrUnknownPrefix, prefix)
+	}
 	raw, err := encodeGob(data)
 	if err != nil {
 		return ID[T]{}, err
@@ -52,9 +39,14 @@ func MustNew[T Definer](data T) ID[T] {
 
 // Parse parses a prefixed ID string like "user.<base64url(gob(data))>".
 // It validates that the prefix matches type T's prefix and that the encoded
-// bytes are valid gob for type T.
+// bytes are valid gob for type T. The type's prefix must be registered in [DefaultRegistry].
 func Parse[T Definer](s string) (ID[T], error) {
-	prefix := ensureRegistered[T]()
+	var zero T
+	prefix := zero.Prefix()
+
+	if !DefaultRegistry.IsRegistered(prefix) {
+		return ID[T]{}, fmt.Errorf("%w: %q", ErrUnknownPrefix, prefix)
+	}
 
 	if s == "" {
 		return ID[T]{}, ErrEmptyString
@@ -107,7 +99,8 @@ func (id ID[T]) String() string {
 	if id.IsZero() {
 		return ""
 	}
-	prefix := ensureRegistered[T]()
+	var zero T
+	prefix := zero.Prefix()
 	sep := DefaultRegistry.Separator()
 	return prefix + sep + encodeBytes(id.raw)
 }

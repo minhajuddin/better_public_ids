@@ -389,7 +389,7 @@ func TestMultipleTypes(t *testing.T) {
 	}
 }
 
-// --- Auto-Registration Tests ---
+// --- Registration Tests ---
 
 type autoRegTestDef struct {
 	Val int64
@@ -397,22 +397,29 @@ type autoRegTestDef struct {
 
 func (autoRegTestDef) Prefix() string { return "autoreg" }
 
-func TestAutoRegistration(t *testing.T) {
-	freshReg := NewRegistry()
+type unregisteredDef struct {
+	X int64
+}
 
-	_, _, err := freshReg.ParseAny("autoreg.AAAAAAAAAAAAAAAAAAAAAA")
+func (unregisteredDef) Prefix() string { return "unreg" }
+
+func TestNewUnregistered(t *testing.T) {
+	_, err := New(unregisteredDef{X: 1})
+	if err == nil {
+		t.Fatal("New with unregistered type should error")
+	}
 	if !errors.Is(err, ErrUnknownPrefix) {
-		t.Fatalf("expected ErrUnknownPrefix on fresh registry, got %v", err)
+		t.Fatalf("error = %v, want ErrUnknownPrefix", err)
 	}
+}
 
-	id := MustNew(autoRegTestDef{Val: 42})
-
-	prefix, _, err := DefaultRegistry.ParseAny(id.String())
-	if err != nil {
-		t.Fatalf("ParseAny after auto-registration: %v", err)
+func TestParseUnregistered(t *testing.T) {
+	_, err := Parse[unregisteredDef]("unreg.AAAAAAAAAA")
+	if err == nil {
+		t.Fatal("Parse with unregistered type should error")
 	}
-	if prefix != "autoreg" {
-		t.Errorf("prefix = %q, want %q", prefix, "autoreg")
+	if !errors.Is(err, ErrUnknownPrefix) {
+		t.Fatalf("error = %v, want ErrUnknownPrefix", err)
 	}
 }
 

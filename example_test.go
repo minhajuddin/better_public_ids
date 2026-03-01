@@ -19,6 +19,13 @@ type PostIDDef struct {
 
 func (PostIDDef) Prefix() string { return "post" }
 
+func init() {
+	bpid.DefaultRegistry = bpid.MustNewRegistry(
+		bpid.WithType[UserIDDef](),
+		bpid.WithType[PostIDDef](),
+	)
+}
+
 func ExampleNew() {
 	id, err := bpid.New(UserIDDef{OrgID: 42, UserSeq: 1001})
 	if err != nil {
@@ -73,10 +80,6 @@ func ExampleParse_roundTrip() {
 }
 
 func ExampleParseAny() {
-	// Ensure types are registered by using them
-	_ = bpid.MustNew(UserIDDef{OrgID: 1, UserSeq: 1})
-	_ = bpid.MustNew(PostIDDef{PostNum: 1})
-
 	id := bpid.MustNew(UserIDDef{OrgID: 42, UserSeq: 1001})
 	s := id.String()
 
@@ -101,22 +104,14 @@ func ExampleID_IsZero() {
 }
 
 func ExampleNewRegistry() {
-	reg := bpid.NewRegistry(bpid.WithSeparator("~"))
-	_ = reg.Register("user")
+	reg := bpid.MustNewRegistry(
+		bpid.WithType[UserIDDef](),
+		bpid.WithSeparator("~"),
+	)
 
-	// Build an ID and extract the encoded portion from the default-separator string
-	id := bpid.MustNew(UserIDDef{OrgID: 10, UserSeq: 20})
-	fullStr := id.String() // "user.<encoded>"
-	encodedPart := fullStr[len("user."):]
-
-	// ParseAny with the ~ separator
-	prefix, _, err := reg.ParseAny("user~" + encodedPart)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(prefix)
+	fmt.Println(reg.IsRegistered("user"))
 	fmt.Println(reg.Separator())
 	// Output:
-	// user
+	// true
 	// ~
 }

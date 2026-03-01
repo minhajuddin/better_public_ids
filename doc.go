@@ -2,7 +2,9 @@
 //
 // Each ID type is defined by creating a struct that implements the [Definer]
 // interface. The struct's exported fields ARE the ID's data, serialized using
-// [encoding/gob] and encoded as base64url without padding:
+// [encoding/gob] and encoded as base64url without padding.
+//
+// All types must be registered in a [Registry] before use:
 //
 //	type UserID struct {
 //	    OrgID   int64
@@ -10,12 +12,18 @@
 //	}
 //	func (UserID) Prefix() string { return "user" }
 //
+//	func init() {
+//	    bpid.DefaultRegistry = bpid.MustNewRegistry(
+//	        bpid.WithType[UserID](),
+//	    )
+//	}
+//
 //	id, err := bpid.New(UserID{OrgID: 42, UserSeq: 1001})
 //	fmt.Println(id) // "user.<base64url(gob(data))>"
 //
 // IDs implement [fmt.Stringer], [encoding/gob.GobEncoder], and [encoding/gob.GobDecoder].
 //
-// A global [DefaultRegistry] automatically tracks registered prefixes, enabling
-// type-agnostic parsing via [ParseAny]. Custom [Registry] instances can be created
-// for testing or isolation.
+// The [DefaultRegistry] is used by top-level functions like [New], [Parse],
+// and [ParseAny]. Custom [Registry] instances can be created for testing
+// or isolation.
 package bpid

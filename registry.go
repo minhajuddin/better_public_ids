@@ -9,16 +9,26 @@ import (
 const defaultSeparator = "."
 
 // RegistryOption configures a [Registry].
-type RegistryOption func(*Registry)
+type RegistryOption func(*Registry) error
 
 // WithSeparator sets the separator character used between the prefix and the
-// encoded data. Only "." and "~" are allowed. Panics on invalid separator.
+// encoded data. Only "." and "~" are allowed.
 func WithSeparator(sep string) RegistryOption {
-	if sep != "." && sep != "~" {
-		panic(fmt.Sprintf("bpid: invalid separator %q: must be '.' or '~'", sep))
-	}
-	return func(r *Registry) {
+	return func(r *Registry) error {
+		if sep != "." && sep != "~" {
+			return fmt.Errorf("bpid: invalid separator %q: must be '.' or '~'", sep)
+		}
 		r.separator = sep
+		return nil
+	}
+}
+
+// WithType registers a [Definer] type's prefix in the registry.
+func WithType[T Definer]() RegistryOption {
+	var zero T
+	prefix := zero.Prefix()
+	return func(r *Registry) error {
+		return r.Register(prefix)
 	}
 }
 
@@ -30,13 +40,24 @@ type Registry struct {
 }
 
 // NewRegistry creates a new [Registry] with the given options.
-func NewRegistry(opts ...RegistryOption) *Registry {
+func NewRegistry(opts ...RegistryOption) (*Registry, error) {
 	r := &Registry{
 		separator: defaultSeparator,
 		prefixes:  make(map[string]struct{}),
 	}
 	for _, opt := range opts {
-		opt(r)
+		if err := opt(r); err != nil {
+			return nil, err
+		}
+	}
+	return r, nil
+}
+
+// MustNewRegistry is like [NewRegistry] but panics on error.
+func MustNewRegistry(opts ...RegistryOption) *Registry {
+	r, err := NewRegistry(opts...)
+	if err != nil {
+		panic(fmt.Sprintf("bpid.MustNewRegistry: %v", err))
 	}
 	return r
 }
@@ -53,6 +74,14 @@ func (r *Registry) Register(prefix string) error {
 	}
 	r.prefixes[prefix] = struct{}{}
 	return nil
+}
+
+// IsRegistered reports whether a prefix has been registered.
+func (r *Registry) IsRegistered(prefix string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, ok := r.prefixes[prefix]
+	return ok
 }
 
 // ParseAny parses a prefixed ID string without knowing its type. It returns
@@ -94,14 +123,9 @@ func (r *Registry) Separator() string {
 	return r.separator
 }
 
-// DefaultRegistry is the global registry. ID types automatically register
-// their prefixes here on first use.
-var DefaultRegistry = NewRegistry()
-
-// Register adds a prefix to the [DefaultRegistry].
-func Register(prefix string) error {
-	return DefaultRegistry.Register(prefix)
-}
+// DefaultRegistry is the global registry used by top-level functions.
+// Configure it with [MustNewRegistry] and [WithType] before creating or parsing IDs.
+var DefaultRegistry = MustNewRegistry()
 
 // ParseAny parses a prefixed ID string using the [DefaultRegistry].
 func ParseAny(s string) (prefix string, rawBytes []byte, err error) {

@@ -22,35 +22,91 @@ func makeTestEncodedString(prefix string) (string, []byte) {
 }
 
 func TestNewRegistry(t *testing.T) {
-	r := NewRegistry()
+	r, err := NewRegistry()
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
 	if got := r.Separator(); got != "." {
 		t.Errorf("NewRegistry().Separator() = %q, want %q", got, ".")
 	}
 }
 
 func TestNewRegistryWithSeparator(t *testing.T) {
-	r := NewRegistry(WithSeparator("~"))
+	r, err := NewRegistry(WithSeparator("~"))
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
 	if got := r.Separator(); got != "~" {
 		t.Errorf("Separator() = %q, want %q", got, "~")
 	}
 
-	r2 := NewRegistry(WithSeparator("."))
+	r2, err := NewRegistry(WithSeparator("."))
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
 	if got := r2.Separator(); got != "." {
 		t.Errorf("Separator() = %q, want %q", got, ".")
 	}
 }
 
-func TestWithSeparatorPanics(t *testing.T) {
+func TestWithSeparatorErrors(t *testing.T) {
 	invalids := []string{":", "", "ab", " ", "-", "_", "/", "\\"}
 	for _, sep := range invalids {
 		t.Run(fmt.Sprintf("sep=%q", sep), func(t *testing.T) {
-			defer func() {
-				if r := recover(); r == nil {
-					t.Errorf("WithSeparator(%q) did not panic", sep)
-				}
-			}()
-			WithSeparator(sep)
+			_, err := NewRegistry(WithSeparator(sep))
+			if err == nil {
+				t.Errorf("NewRegistry(WithSeparator(%q)) should error", sep)
+			}
 		})
+	}
+}
+
+func TestMustNewRegistry(t *testing.T) {
+	r := MustNewRegistry(WithSeparator("~"))
+	if got := r.Separator(); got != "~" {
+		t.Errorf("Separator() = %q, want %q", got, "~")
+	}
+}
+
+func TestMustNewRegistryPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("MustNewRegistry with invalid separator should panic")
+		}
+	}()
+	MustNewRegistry(WithSeparator(":"))
+}
+
+func TestWithType(t *testing.T) {
+	r, err := NewRegistry(WithType[registryTestData]())
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	if !r.IsRegistered("regtest") {
+		t.Error("regtest should be registered")
+	}
+}
+
+func TestWithTypeDuplicate(t *testing.T) {
+	_, err := NewRegistry(
+		WithType[registryTestData](),
+		WithType[registryTestData](),
+	)
+	if err == nil {
+		t.Fatal("duplicate WithType should error")
+	}
+	if !errors.Is(err, ErrDuplicatePrefix) {
+		t.Fatalf("error = %v, want ErrDuplicatePrefix", err)
+	}
+}
+
+func TestIsRegistered(t *testing.T) {
+	r := MustNewRegistry(WithType[registryTestData]())
+	if !r.IsRegistered("regtest") {
+		t.Error("regtest should be registered")
+	}
+	if r.IsRegistered("unknown") {
+		t.Error("unknown should not be registered")
 	}
 }
 
@@ -77,7 +133,7 @@ func TestRegistryRegister(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := NewRegistry()
+			r := MustNewRegistry()
 			err := r.Register(tt.prefix)
 			if tt.wantErr != nil {
 				if err == nil {
@@ -96,7 +152,7 @@ func TestRegistryRegister(t *testing.T) {
 }
 
 func TestRegistryRegisterDuplicate(t *testing.T) {
-	r := NewRegistry()
+	r := MustNewRegistry()
 	if err := r.Register("user"); err != nil {
 		t.Fatalf("first Register: %v", err)
 	}
@@ -113,7 +169,7 @@ func TestRegistryParseAny(t *testing.T) {
 	validUserStr, validUserRaw := makeTestEncodedString("user")
 	validPostStr, _ := makeTestEncodedString("post")
 
-	r := NewRegistry()
+	r := MustNewRegistry()
 	if err := r.Register("user"); err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +247,7 @@ func TestRegistryParseAnyWithCustomSeparator(t *testing.T) {
 	raw, _ := encodeGob(data)
 	encoded := encodeBytes(raw)
 
-	r := NewRegistry(WithSeparator("~"))
+	r := MustNewRegistry(WithSeparator("~"))
 	if err := r.Register("user"); err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +275,7 @@ func TestRegistryParseAnyWithCustomSeparator(t *testing.T) {
 }
 
 func TestRegistryConcurrency(t *testing.T) {
-	r := NewRegistry()
+	r := MustNewRegistry()
 	var wg sync.WaitGroup
 	errs := make(chan error, 200)
 
@@ -280,11 +336,10 @@ func TestRegistryConcurrency(t *testing.T) {
 
 func TestDefaultRegistryDelegation(t *testing.T) {
 	origRegistry := DefaultRegistry
-	DefaultRegistry = NewRegistry()
+	DefaultRegistry = MustNewRegistry()
 	defer func() { DefaultRegistry = origRegistry }()
 
-	err := Register("testdel")
-	if err != nil {
+	if err := DefaultRegistry.Register("testdel"); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
 
