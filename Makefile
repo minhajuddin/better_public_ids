@@ -20,7 +20,7 @@ vet:
 FUZZTIME ?= 10s
 
 fuzz:
-	go test ./... -fuzz=FuzzParse -fuzztime=$(FUZZTIME)
+	go test ./... -fuzz=FuzzDeserialize -fuzztime=$(FUZZTIME)
 
 bench:
 	go test ./... -bench=. -benchmem

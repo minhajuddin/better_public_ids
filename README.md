@@ -3,7 +3,7 @@
 Type-safe, prefixed public identifiers for Go using generics. Each ID carries structured data serialized with `encoding/gob` and encoded as base64url. Zero external dependencies.
 
 ```
-user.H4sIAAAAAAAAA6tWKkktLlGyUlAqS8wpTtVRSs7PS8nMS1eqBQBHnKYcHAAAAA
+user.Kv-HAwEBBlVzZXJJRAH_iAABAgEFT3JnSUQBBAABB1VzZXJTZXEBBAAAAAn_iAFUAf4H0gA
 ```
 
 ## Install
@@ -12,11 +12,9 @@ user.H4sIAAAAAAAAA6tWKkktLlGyUlAqS8wpTtVRSs7PS8nMS1eqBQBHnKYcHAAAAA
 go get github.com/minhajuddin/better_public_ids
 ```
 
-## Usage
+## Quick Start
 
-### 1. Define ID types
-
-Create structs with exported fields and implement `Prefix()`:
+Define plain structs for your ID types — no interfaces to implement:
 
 ```go
 type UserID struct {
@@ -24,94 +22,187 @@ type UserID struct {
     UserSeq int64
 }
 
-func (UserID) Prefix() string { return "user" }
-
 type PostID struct {
-    BoardID int64
-    PostSeq int64
-}
-
-func (PostID) Prefix() string { return "post" }
-```
-
-### 2. Register all types in a registry
-
-```go
-func init() {
-    bpid.DefaultRegistry = bpid.MustNewRegistry(
-        bpid.WithType[UserID](),
-        bpid.WithType[PostID](),
-    )
+    PostNum int64
 }
 ```
 
-### 3. Create and use IDs
+Create a registry, register types with prefixes, then serialize and deserialize:
 
 ```go
-id, err := bpid.New(UserID{OrgID: 42, UserSeq: 1001})
-id := bpid.MustNew(UserID{OrgID: 42, UserSeq: 1001})
+import bpid "github.com/minhajuddin/better_public_ids"
+
+var registry = bpid.MustNewRegistry(
+    bpid.WithType[UserID]("user"),
+    bpid.WithType[PostID]("post"),
+)
+
+// Serialize a struct into a prefixed string.
+s, err := bpid.Serialize(registry, UserID{OrgID: 42, UserSeq: 1001})
+// s = "user.Kv-HAwEBBlVzZXJJRAH_iAABAgEFT3JnSUQBBAABB1VzZXJTZXEBBAAAAAn_iAFUAf4H0gA"
+
+// Deserialize back into a typed struct.
+data, err := bpid.Deserialize[UserID](registry, s)
+// data.OrgID = 42, data.UserSeq = 1001
 ```
 
-### Access data
+## Prefix Extraction
+
+Extract the prefix from a serialized ID for routing or switching before deserializing:
 
 ```go
-data, err := id.Data()
-fmt.Println(data.OrgID)   // 42
-fmt.Println(data.UserSeq) // 1001
+prefix, err := registry.Prefix(s)
+// prefix = "user"
+
+switch prefix {
+case "user":
+    data, err := bpid.Deserialize[UserID](registry, s)
+case "post":
+    data, err := bpid.Deserialize[PostID](registry, s)
+}
 ```
 
-### String representation and parsing
+## Signed IDs
+
+`SignedRegistry` wraps a `Registry` and appends a truncated HMAC-SHA256 signature to each ID, making tampering detectable. The format is `prefix.encoded.signature`.
 
 ```go
-s := id.String() // "user.<base64url(gob(data))>"
+key := []byte("your-secret-signing-key")
+sr := bpid.MustNewSignedRegistry(registry, key)
 
-parsed, err := bpid.Parse[UserID](s)
-fmt.Println(id.Equal(parsed)) // true
+// Serialize with signature.
+s, err := bpid.SignedSerialize(sr, UserID{OrgID: 42, UserSeq: 1001})
+
+// Deserialize — verifies the signature first, returns ErrInvalidSignature on tamper.
+data, err := bpid.SignedDeserialize[UserID](sr, s)
+
+// Prefix extraction also verifies the signature.
+prefix, err := sr.Prefix(s)
 ```
 
-### Type-agnostic parsing
+Any modification to the prefix, encoded data, or signature causes `ErrInvalidSignature`.
+
+## Key Rotation
+
+Use `WithOldKeys` for zero-downtime key rotation. Old keys can verify existing signatures but won't sign new IDs:
 
 ```go
-prefix, rawBytes, err := bpid.ParseAny(s)
-// prefix = "user", rawBytes = gob-encoded bytes
+oldKey := []byte("old-secret-key")
+newKey := []byte("new-secret-key")
+
+sr := bpid.MustNewSignedRegistry(registry, newKey, bpid.WithOldKeys(oldKey))
+// New IDs are signed with newKey.
+// Old IDs signed with oldKey still verify.
+// Once all old IDs have expired, remove oldKey.
 ```
 
-### Zero values
+## Custom Separators
 
-The zero value of `ID[T]` represents "no ID":
-
-```go
-var id bpid.ID[UserID]
-id.IsZero()  // true
-id.String()  // ""
-```
-
-### Custom registries
+The default separator is `"."`. You can use `"~"` instead (only `"."` and `"~"` are allowed):
 
 ```go
 reg := bpid.MustNewRegistry(
-    bpid.WithType[UserID](),
+    bpid.WithType[UserID]("user"),
     bpid.WithSeparator("~"),
 )
+// produces: user~Kv-HAwEB...
 ```
 
-## Interfaces
+## Encoding Pipeline
 
-Every `ID[T]` implements:
+```
+Struct → gob → base64url (no padding) → "prefix.encoded"
+```
 
-- `fmt.Stringer`
-- `encoding/gob.GobEncoder` / `GobDecoder`
+Signed variant:
+
+```
+Struct → gob → base64url → "prefix.encoded" → HMAC-SHA256 → "prefix.encoded.signature"
+```
+
+The encoded data uses Go's `encoding/gob` format, so only Go programs can decode the embedded data. Non-Go consumers can still use IDs as opaque strings — compare, store, and transmit them freely.
+
+## Error Handling
+
+All errors are sentinel values, usable with `errors.Is`:
+
+**Validation errors:**
+
+| Error | Meaning |
+|---|---|
+| `ErrInvalidPrefix` | Prefix doesn't match `[a-z0-9][a-z0-9_-]*` |
+| `ErrInvalidSeparator` | Separator is not `"."` or `"~"` |
+| `ErrDuplicatePrefix` | Prefix already registered |
+| `ErrDuplicateType` | Type already registered |
+| `ErrUnregisteredPrefix` | Prefix not in registry |
+| `ErrPrefixMismatch` | String prefix doesn't match expected type |
+
+**Serialization errors:**
+
+| Error | Meaning |
+|---|---|
+| `ErrEmptyString` | Attempted to deserialize an empty string |
+| `ErrInvalidFormat` | Missing separator between prefix and data |
+| `ErrInvalidEncoding` | Base64url portion is corrupt |
+| `ErrEncodingFailed` | Gob encoding failed |
+| `ErrDecodingFailed` | Gob decoding failed |
+
+**Signature errors:**
+
+| Error | Meaning |
+|---|---|
+| `ErrInvalidSignature` | HMAC signature doesn't match any known key |
+| `ErrInvalidKey` | Signing or verification key is empty |
+
+## API Reference
+
+### Registry
+
+```go
+func NewRegistry(opts ...RegistryOption) (*Registry, error)
+func MustNewRegistry(opts ...RegistryOption) *Registry
+
+func WithType[T any](prefix string) RegistryOption
+func WithSeparator(sep string) RegistryOption
+
+func (*Registry) Prefix(s string) (string, error)
+func (*Registry) Separator() string
+```
+
+### Serialize / Deserialize
+
+```go
+func Serialize[T any](r *Registry, data T) (string, error)
+func MustSerialize[T any](r *Registry, data T) string
+func Deserialize[T any](r *Registry, s string) (T, error)
+```
+
+### Signed Registry
+
+```go
+func NewSignedRegistry(r *Registry, signingKey []byte, opts ...SignedRegistryOption) (*SignedRegistry, error)
+func MustNewSignedRegistry(r *Registry, signingKey []byte, opts ...SignedRegistryOption) *SignedRegistry
+
+func WithOldKeys(keys ...[]byte) SignedRegistryOption
+
+func (*SignedRegistry) Prefix(s string) (string, error)
+func (*SignedRegistry) Separator() string
+
+func SignedSerialize[T any](sr *SignedRegistry, data T) (string, error)
+func MustSignedSerialize[T any](sr *SignedRegistry, data T) string
+func SignedDeserialize[T any](sr *SignedRegistry, s string) (T, error)
+```
 
 ## Development
 
 ```sh
-make          # vet + build + test
-make test     # go test ./...
-make test-v   # verbose tests
-make test-race # tests with race detector
-make vet      # go vet ./...
-make bench    # benchmarks with -benchmem
-make fuzz     # fuzz FuzzParse (10s)
+make              # vet + build + test
+make test         # go test ./...
+make test-v       # verbose tests
+make test-race    # tests with race detector
+make vet          # go vet ./...
+make bench        # benchmarks with -benchmem
+make fuzz         # fuzz FuzzDeserialize (10s)
 make fuzz FUZZTIME=30s  # override fuzz duration
-make clean    # clear test and fuzz caches
+make clean        # clear test and fuzz caches
 ```
