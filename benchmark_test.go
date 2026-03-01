@@ -7,9 +7,7 @@ type benchUserID struct {
 	UserSeq int64
 }
 
-func (benchUserID) Prefix() string { return "benchuser" }
-
-var benchRegistry = MustNewRegistry(WithType[benchUserID]())
+var benchRegistry = MustNewRegistry(WithType[benchUserID]("benchuser"))
 
 func BenchmarkSerialize(b *testing.B) {
 	for b.Loop() {

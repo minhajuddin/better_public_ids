@@ -29,6 +29,9 @@ var (
 	// registered.
 	ErrDuplicatePrefix = errors.New("bpid: duplicate prefix")
 
+	// ErrDuplicateType is returned when registering the same type twice.
+	ErrDuplicateType = errors.New("bpid: duplicate type")
+
 	// ErrEncodingFailed is returned when gob encoding of the data fails.
 	ErrEncodingFailed = errors.New("bpid: failed to encode data")
 

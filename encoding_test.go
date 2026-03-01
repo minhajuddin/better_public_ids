@@ -12,8 +12,6 @@ type testEncID struct {
 	UserSeq int64
 }
 
-func (testEncID) Prefix() string { return "enctest" }
-
 func TestEncodeGobRoundTrip(t *testing.T) {
 	tests := []struct {
 		name string

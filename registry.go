@@ -2,15 +2,30 @@ package bpid
 
 import (
 	"fmt"
+	"reflect"
+	"regexp"
 	"strings"
 )
 
 const defaultSeparator = "."
 
+// prefixRegexp validates that a prefix contains only lowercase alphanumeric,
+// hyphens, and underscores.
+var prefixRegexp = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+
+// validatePrefix checks that a prefix matches the allowed pattern.
+func validatePrefix(prefix string) error {
+	if !prefixRegexp.MatchString(prefix) {
+		return fmt.Errorf("%w: got %q", ErrInvalidPrefix, prefix)
+	}
+	return nil
+}
+
 // registryConfig accumulates options before building an immutable [Registry].
 type registryConfig struct {
-	separator string
-	prefixes  map[string]struct{}
+	separator   string
+	prefixes    map[string]struct{}
+	typeToPrefix map[reflect.Type]string
 }
 
 // RegistryOption configures a [Registry].
@@ -28,10 +43,8 @@ func WithSeparator(sep string) RegistryOption {
 	}
 }
 
-// WithType registers a [PublicID] type's prefix in the registry.
-func WithType[T PublicID]() RegistryOption {
-	var zero T
-	prefix := zero.Prefix()
+// WithType registers a type with the given prefix in the registry.
+func WithType[T any](prefix string) RegistryOption {
 	return func(cfg *registryConfig) error {
 		if err := validatePrefix(prefix); err != nil {
 			return err
@@ -39,22 +52,29 @@ func WithType[T PublicID]() RegistryOption {
 		if _, exists := cfg.prefixes[prefix]; exists {
 			return fmt.Errorf("%w: %q", ErrDuplicatePrefix, prefix)
 		}
+		t := reflect.TypeFor[T]()
+		if _, exists := cfg.typeToPrefix[t]; exists {
+			return fmt.Errorf("%w: %v", ErrDuplicateType, t)
+		}
 		cfg.prefixes[prefix] = struct{}{}
+		cfg.typeToPrefix[t] = prefix
 		return nil
 	}
 }
 
 // Registry is the central type. Immutable after creation, safe for concurrent use.
 type Registry struct {
-	separator string
-	prefixes  map[string]struct{}
+	separator    string
+	prefixes     map[string]struct{}
+	typeToPrefix map[reflect.Type]string
 }
 
 // NewRegistry creates a new [Registry] with the given options.
 func NewRegistry(opts ...RegistryOption) (*Registry, error) {
 	cfg := &registryConfig{
-		separator: defaultSeparator,
-		prefixes:  make(map[string]struct{}),
+		separator:    defaultSeparator,
+		prefixes:     make(map[string]struct{}),
+		typeToPrefix: make(map[reflect.Type]string),
 	}
 	for _, opt := range opts {
 		if err := opt(cfg); err != nil {
@@ -62,8 +82,9 @@ func NewRegistry(opts ...RegistryOption) (*Registry, error) {
 		}
 	}
 	return &Registry{
-		separator: cfg.separator,
-		prefixes:  cfg.prefixes,
+		separator:    cfg.separator,
+		prefixes:     cfg.prefixes,
+		typeToPrefix: cfg.typeToPrefix,
 	}, nil
 }
 
@@ -97,12 +118,11 @@ func (r *Registry) Prefix(s string) (string, error) {
 	return prefix, nil
 }
 
-// Serialize encodes a [PublicID] value into a prefixed string.
-func Serialize[T PublicID](r *Registry, data T) (string, error) {
-	var zero T
-	prefix := zero.Prefix()
-	if _, ok := r.prefixes[prefix]; !ok {
-		return "", fmt.Errorf("%w: %q", ErrUnregisteredPrefix, prefix)
+// Serialize encodes a value into a prefixed string.
+func Serialize[T any](r *Registry, data T) (string, error) {
+	prefix, ok := r.typeToPrefix[reflect.TypeFor[T]()]
+	if !ok {
+		return "", fmt.Errorf("%w: %v", ErrUnregisteredPrefix, reflect.TypeFor[T]())
 	}
 	raw, err := encodeGob(data)
 	if err != nil {
@@ -112,7 +132,7 @@ func Serialize[T PublicID](r *Registry, data T) (string, error) {
 }
 
 // MustSerialize is like [Serialize] but panics on error.
-func MustSerialize[T PublicID](r *Registry, data T) string {
+func MustSerialize[T any](r *Registry, data T) string {
 	s, err := Serialize(r, data)
 	if err != nil {
 		panic(fmt.Sprintf("bpid.MustSerialize: %v", err))
@@ -120,12 +140,12 @@ func MustSerialize[T PublicID](r *Registry, data T) string {
 	return s
 }
 
-// Deserialize decodes a prefixed string back into a [PublicID] value.
-func Deserialize[T PublicID](r *Registry, s string) (T, error) {
+// Deserialize decodes a prefixed string back into a value.
+func Deserialize[T any](r *Registry, s string) (T, error) {
 	var zero T
-	prefix := zero.Prefix()
-	if _, ok := r.prefixes[prefix]; !ok {
-		return zero, fmt.Errorf("%w: %q", ErrUnregisteredPrefix, prefix)
+	prefix, ok := r.typeToPrefix[reflect.TypeFor[T]()]
+	if !ok {
+		return zero, fmt.Errorf("%w: %v", ErrUnregisteredPrefix, reflect.TypeFor[T]())
 	}
 	if s == "" {
 		return zero, ErrEmptyString

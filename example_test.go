@@ -11,17 +11,13 @@ type UserID struct {
 	UserSeq int64
 }
 
-func (UserID) Prefix() string { return "user" }
-
 type PostID struct {
 	PostNum int64
 }
 
-func (PostID) Prefix() string { return "post" }
-
 var exampleRegistry = bpid.MustNewRegistry(
-	bpid.WithType[UserID](),
-	bpid.WithType[PostID](),
+	bpid.WithType[UserID]("user"),
+	bpid.WithType[PostID]("post"),
 )
 
 func ExampleSerialize() {
@@ -85,7 +81,7 @@ func ExampleRegistry_Prefix() {
 
 func ExampleNewRegistry() {
 	reg := bpid.MustNewRegistry(
-		bpid.WithType[UserID](),
+		bpid.WithType[UserID]("user"),
 		bpid.WithSeparator("~"),
 	)
 

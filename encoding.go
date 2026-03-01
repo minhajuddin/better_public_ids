@@ -10,7 +10,7 @@ import (
 // encodeGob serializes data using encoding/gob. A fresh encoder is created
 // each time to ensure type descriptors are always included, making the
 // output deterministic for equal inputs.
-func encodeGob[T PublicID](data T) ([]byte, error) {
+func encodeGob[T any](data T) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
 	if err := enc.Encode(data); err != nil {
@@ -20,7 +20,7 @@ func encodeGob[T PublicID](data T) ([]byte, error) {
 }
 
 // decodeGob deserializes gob-encoded bytes back into a value of type T.
-func decodeGob[T PublicID](raw []byte) (T, error) {
+func decodeGob[T any](raw []byte) (T, error) {
 	var result T
 	dec := gob.NewDecoder(bytes.NewReader(raw))
 	if err := dec.Decode(&result); err != nil {

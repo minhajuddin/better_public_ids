@@ -1,21 +1,20 @@
 // Package bpid provides type-safe, prefixed public identifiers using Go generics.
 //
-// Each ID type is defined by creating a struct that implements the [PublicID]
-// interface. The struct's exported fields ARE the ID's data, serialized using
-// [encoding/gob] and encoded as base64url without padding.
+// Each ID type is a plain struct whose exported fields ARE the ID's data,
+// serialized using [encoding/gob] and encoded as base64url without padding.
+// The prefix is provided at registration time, not on the type itself.
 //
-// Define an ID type by implementing [PublicID]:
+// Define an ID type as a plain struct:
 //
 //	type UserID struct {
 //	    OrgID   int64
 //	    UserSeq int64
 //	}
-//	func (UserID) Prefix() string { return "user" }
 //
-// Create a registry and register your types:
+// Create a registry and register your types with their prefixes:
 //
 //	var registry = bpid.MustNewRegistry(
-//	    bpid.WithType[UserID](),
+//	    bpid.WithType[UserID]("user"),
 //	)
 //
 // Serialize a struct into a prefixed string:

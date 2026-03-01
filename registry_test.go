@@ -12,21 +12,15 @@ type testRegID struct {
 	Val int64
 }
 
-func (testRegID) Prefix() string { return "regtest" }
-
 type testUserID struct {
 	OrgID   int64
 	UserSeq int64
 }
 
-func (testUserID) Prefix() string { return "user" }
-
 type testPostID struct {
 	BoardID int64
 	PostSeq int64
 }
-
-func (testPostID) Prefix() string { return "post" }
 
 // --- NewRegistry Tests ---
 
@@ -92,46 +86,51 @@ func TestMustNewRegistryPanics(t *testing.T) {
 // --- WithType Tests ---
 
 func TestWithType(t *testing.T) {
-	_, err := NewRegistry(WithType[testRegID]())
+	_, err := NewRegistry(WithType[testRegID]("regtest"))
 	if err != nil {
 		t.Fatalf("NewRegistry: %v", err)
 	}
 }
 
-func TestWithTypeDuplicate(t *testing.T) {
+func TestWithTypeDuplicatePrefix(t *testing.T) {
 	_, err := NewRegistry(
-		WithType[testRegID](),
-		WithType[testRegID](),
+		WithType[testRegID]("regtest"),
+		WithType[testPostID]("regtest"),
 	)
 	if err == nil {
-		t.Fatal("duplicate WithType should error")
+		t.Fatal("duplicate prefix should error")
 	}
 	if !errors.Is(err, ErrDuplicatePrefix) {
 		t.Fatalf("error = %v, want ErrDuplicatePrefix", err)
 	}
 }
 
-// --- Prefix Validation (via WithType with bad prefix types) ---
+func TestWithTypeDuplicateType(t *testing.T) {
+	_, err := NewRegistry(
+		WithType[testRegID]("regtest"),
+		WithType[testRegID]("regtest2"),
+	)
+	if err == nil {
+		t.Fatal("duplicate type should error")
+	}
+	if !errors.Is(err, ErrDuplicateType) {
+		t.Fatalf("error = %v, want ErrDuplicateType", err)
+	}
+}
 
-type badPrefixEmpty struct{}
-
-func (badPrefixEmpty) Prefix() string { return "" }
-
-type badPrefixUpper struct{}
-
-func (badPrefixUpper) Prefix() string { return "User" }
+// --- Prefix Validation ---
 
 func TestWithTypeInvalidPrefix(t *testing.T) {
 	tests := []struct {
-		name string
-		opt  RegistryOption
+		name   string
+		prefix string
 	}{
-		{name: "empty prefix", opt: WithType[badPrefixEmpty]()},
-		{name: "uppercase prefix", opt: WithType[badPrefixUpper]()},
+		{name: "empty prefix", prefix: ""},
+		{name: "uppercase prefix", prefix: "User"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewRegistry(tt.opt)
+			_, err := NewRegistry(WithType[testRegID](tt.prefix))
 			if err == nil {
 				t.Fatal("expected error for invalid prefix")
 			}
@@ -145,7 +144,7 @@ func TestWithTypeInvalidPrefix(t *testing.T) {
 // --- Serialize Tests ---
 
 func TestSerialize(t *testing.T) {
-	r := MustNewRegistry(WithType[testUserID]())
+	r := MustNewRegistry(WithType[testUserID]("user"))
 	data := testUserID{OrgID: 42, UserSeq: 1001}
 
 	s, err := Serialize(r, data)
@@ -161,7 +160,7 @@ func TestSerialize(t *testing.T) {
 }
 
 func TestSerializeDeterministic(t *testing.T) {
-	r := MustNewRegistry(WithType[testUserID]())
+	r := MustNewRegistry(WithType[testUserID]("user"))
 	data := testUserID{OrgID: 42, UserSeq: 1001}
 
 	s1, _ := Serialize(r, data)
@@ -172,7 +171,7 @@ func TestSerializeDeterministic(t *testing.T) {
 }
 
 func TestSerializeUnregistered(t *testing.T) {
-	r := MustNewRegistry(WithType[testPostID]())
+	r := MustNewRegistry(WithType[testPostID]("post"))
 	_, err := Serialize(r, testUserID{OrgID: 1, UserSeq: 1})
 	if err == nil {
 		t.Fatal("Serialize with unregistered type should error")
@@ -183,7 +182,7 @@ func TestSerializeUnregistered(t *testing.T) {
 }
 
 func TestMustSerialize(t *testing.T) {
-	r := MustNewRegistry(WithType[testUserID]())
+	r := MustNewRegistry(WithType[testUserID]("user"))
 	data := testUserID{OrgID: 42, UserSeq: 1001}
 	s := MustSerialize(r, data)
 	if !strings.HasPrefix(s, "user.") {
@@ -204,7 +203,7 @@ func TestMustSerializePanics(t *testing.T) {
 // --- Deserialize Tests ---
 
 func TestDeserialize(t *testing.T) {
-	r := MustNewRegistry(WithType[testUserID]())
+	r := MustNewRegistry(WithType[testUserID]("user"))
 	data := testUserID{OrgID: 42, UserSeq: 1001}
 	s, _ := Serialize(r, data)
 
@@ -218,7 +217,7 @@ func TestDeserialize(t *testing.T) {
 }
 
 func TestDeserializeErrors(t *testing.T) {
-	r := MustNewRegistry(WithType[testUserID](), WithType[testPostID]())
+	r := MustNewRegistry(WithType[testUserID]("user"), WithType[testPostID]("post"))
 	validS, _ := Serialize(r, testUserID{OrgID: 42, UserSeq: 1001})
 
 	tests := []struct {
@@ -247,7 +246,7 @@ func TestDeserializeErrors(t *testing.T) {
 }
 
 func TestDeserializeUnregistered(t *testing.T) {
-	r := MustNewRegistry(WithType[testPostID]())
+	r := MustNewRegistry(WithType[testPostID]("post"))
 	_, err := Deserialize[testUserID](r, "user.AAAA")
 	if err == nil {
 		t.Fatal("Deserialize with unregistered type should error")
@@ -260,7 +259,7 @@ func TestDeserializeUnregistered(t *testing.T) {
 // --- Round-trip Tests ---
 
 func TestSerializeDeserializeRoundTrip(t *testing.T) {
-	r := MustNewRegistry(WithType[testUserID]())
+	r := MustNewRegistry(WithType[testUserID]("user"))
 	data := testUserID{OrgID: 42, UserSeq: 1001}
 
 	s, err := Serialize(r, data)
@@ -277,7 +276,7 @@ func TestSerializeDeserializeRoundTrip(t *testing.T) {
 }
 
 func TestRoundTripMultipleTypes(t *testing.T) {
-	r := MustNewRegistry(WithType[testUserID](), WithType[testPostID]())
+	r := MustNewRegistry(WithType[testUserID]("user"), WithType[testPostID]("post"))
 
 	userData := testUserID{OrgID: 1, UserSeq: 2}
 	postData := testPostID{BoardID: 3, PostSeq: 4}
@@ -312,7 +311,7 @@ func TestRoundTripMultipleTypes(t *testing.T) {
 // --- Registry.Prefix Tests ---
 
 func TestRegistryPrefix(t *testing.T) {
-	r := MustNewRegistry(WithType[testUserID](), WithType[testPostID]())
+	r := MustNewRegistry(WithType[testUserID]("user"), WithType[testPostID]("post"))
 	s, _ := Serialize(r, testUserID{OrgID: 42, UserSeq: 1001})
 
 	prefix, err := r.Prefix(s)
@@ -325,7 +324,7 @@ func TestRegistryPrefix(t *testing.T) {
 }
 
 func TestRegistryPrefixErrors(t *testing.T) {
-	r := MustNewRegistry(WithType[testUserID]())
+	r := MustNewRegistry(WithType[testUserID]("user"))
 
 	tests := []struct {
 		name    string
@@ -353,7 +352,7 @@ func TestRegistryPrefixErrors(t *testing.T) {
 // --- Custom Separator Tests ---
 
 func TestSerializeDeserializeCustomSeparator(t *testing.T) {
-	r := MustNewRegistry(WithSeparator("~"), WithType[testUserID]())
+	r := MustNewRegistry(WithSeparator("~"), WithType[testUserID]("user"))
 	data := testUserID{OrgID: 42, UserSeq: 1001}
 
 	s, err := Serialize(r, data)
@@ -383,8 +382,8 @@ func TestSerializeDeserializeCustomSeparator(t *testing.T) {
 }
 
 func TestDeserializeWrongSeparator(t *testing.T) {
-	rDot := MustNewRegistry(WithType[testUserID]())
-	rTilde := MustNewRegistry(WithSeparator("~"), WithType[testUserID]())
+	rDot := MustNewRegistry(WithType[testUserID]("user"))
+	rTilde := MustNewRegistry(WithSeparator("~"), WithType[testUserID]("user"))
 
 	s, _ := Serialize(rDot, testUserID{OrgID: 42, UserSeq: 1001})
 
@@ -398,7 +397,7 @@ func TestDeserializeWrongSeparator(t *testing.T) {
 // --- Concurrency Tests ---
 
 func TestConcurrentSerialize(t *testing.T) {
-	r := MustNewRegistry(WithType[testUserID]())
+	r := MustNewRegistry(WithType[testUserID]("user"))
 	const n = 100
 	results := make([]string, n)
 	errs := make([]error, n)
@@ -427,7 +426,7 @@ func TestConcurrentSerialize(t *testing.T) {
 }
 
 func TestConcurrentDeserialize(t *testing.T) {
-	r := MustNewRegistry(WithType[testUserID]())
+	r := MustNewRegistry(WithType[testUserID]("user"))
 	data := testUserID{OrgID: 42, UserSeq: 1001}
 	s, _ := Serialize(r, data)
 
@@ -457,7 +456,7 @@ func TestConcurrentDeserialize(t *testing.T) {
 }
 
 func TestConcurrentMixedOperations(t *testing.T) {
-	r := MustNewRegistry(WithType[testUserID]())
+	r := MustNewRegistry(WithType[testUserID]("user"))
 	const n = 50
 	var wg sync.WaitGroup
 

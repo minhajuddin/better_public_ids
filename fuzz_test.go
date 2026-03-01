@@ -7,9 +7,7 @@ type fuzzUserID struct {
 	B string
 }
 
-func (fuzzUserID) Prefix() string { return "fuzzuser" }
-
-var fuzzRegistry = MustNewRegistry(WithType[fuzzUserID]())
+var fuzzRegistry = MustNewRegistry(WithType[fuzzUserID]("fuzzuser"))
 
 func FuzzDeserialize(f *testing.F) {
 	s := MustSerialize(fuzzRegistry, fuzzUserID{A: 1, B: "hello"})
