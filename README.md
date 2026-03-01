@@ -167,6 +167,7 @@ func WithSeparator(sep string) RegistryOption
 
 func (*Registry) Prefix(s string) (string, error)
 func (*Registry) Separator() string
+func (*Registry) Inspect() string
 ```
 
 ### Serialize / Deserialize
@@ -187,10 +188,59 @@ func WithOldKeys(keys ...[]byte) SignedRegistryOption
 
 func (*SignedRegistry) Prefix(s string) (string, error)
 func (*SignedRegistry) Separator() string
+func (*SignedRegistry) Inspect() string
 
 func SignedSerialize[T any](sr *SignedRegistry, data T) (string, error)
 func MustSignedSerialize[T any](sr *SignedRegistry, data T) string
 func SignedDeserialize[T any](sr *SignedRegistry, s string) (T, error)
+```
+
+## Full Example
+
+A runnable example lives in [`example/main.go`](example/main.go). It registers three ID types — int64, UUID, and string-based — then demonstrates serialization, signed IDs, tamper detection, and key rotation.
+
+Run it with:
+
+```sh
+go run ./example/
+```
+
+Output:
+
+```
+Registry: bpid.Registry(separator=".", types=3, registered=[inv→main.InviteID, order→main.OrderID, sess→main.SessionID])
+
+OrderID serialized:   order.LH8DAQEHT3JkZXJJRAH_gAABAgEGU2hvcElEAQQAAQhPcmRlclNlcQEEAAAACf-AAVQB_gfSAA
+OrderID deserialized: ShopID=42 OrderSeq=1001
+
+SessionID serialized:   sess.If-BAwEBCVNlc3Npb25JRAH_ggABAQEEVVVJRAH_hAAAABn_gwEBAQlbMTZddWludDgB_4QAAQYBIAAAH_-CARBr_6f_uBD_nf-tEf_R_4D_tAD_wE__1DD_yAA
+SessionID deserialized: UUID=6ba7b810-9dad-11d1-80b4-00c04fd430c8
+
+InviteID serialized:   inv.Lf-FAwEBCEludml0ZUlEAf-GAAECAQlXb3Jrc3BhY2UBDAABBENvZGUBDAAAABX_hgEJYWNtZS1jb3JwAQV4SzltUQA
+InviteID deserialized: Workspace="acme-corp" Code="xK9mQ"
+
+--- Prefix extraction ---
+  order.LH8DAQEHT3JkZX...  →  prefix="order"
+  sess.If-BAwEBCVNlc3N...  →  prefix="sess"
+  inv.Lf-FAwEBCEludml0...  →  prefix="inv"
+
+========================================
+  Signed Registry
+========================================
+
+SignedRegistry: bpid.SignedRegistry(signingKey=6d792d73..., oldKeys=0, registry=bpid.Registry(separator=".", types=3, registered=[inv→main.InviteID, order→main.OrderID, sess→main.SessionID]))
+
+Signed OrderID:   order.LH8DAQEHT3JkZXJJRAH_gAABAgEGU2hvcElEAQQAAQhPcmRlclNlcQEEAAAACf-AAVQB_gfSAA.D3OA5qQMWZ6z
+Deserialized:     ShopID=42 OrderSeq=1001
+
+--- Tamper detection ---
+Tampered ID rejected: bpid: invalid signature
+
+--- Key rotation ---
+Signed with old key: inv.Lf-FAwEBCEludml0ZUlEAf-GAA...
+Old ID still valid:  Workspace="acme-corp" Code="xK9mQ"
+Signed with new key: inv.Lf-FAwEBCEludml0ZUlEAf-GAA...
+New ID valid:        Workspace="acme-corp" Code="xK9mQ"
 ```
 
 ## Development
